@@ -48,6 +48,19 @@ cindex embed "A short sentence to embed" --cache-dir "C:\another\cache"
 
 The command prints the embedding as a JSON array of floats.
 
+Run the warm-model API server so the embedding model stays resident in memory:
+
+```powershell
+cindex serve --model sentence-transformers/all-MiniLM-L6-v2
+```
+
+Then call the API from another terminal:
+
+```powershell
+curl http://127.0.0.1:8000/health
+curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"text":"hello world"}'
+```
+
 Index a directory of Python source files:
 
 ```powershell
@@ -96,6 +109,12 @@ Run a semantic similarity query against stored vertex embeddings:
 cindex query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
 ```
 
+The same semantic query is also available over HTTP once the server is running:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/query/similar -H "Content-Type: application/json" -d '{"sqlite_db":".cindex/graph.db","text":"find sqlite vector initialization code"}'
+```
+
 Limit the search to a specific vertex label and format the output as JSON:
 
 ```powershell
@@ -132,7 +151,8 @@ pytest
 |       |       |-- __init__.py
 |       |       |-- embed.py
 |       |       |-- index.py
-|       |       `-- query.py
+|       |       |-- query.py
+|       |       `-- serve.py
 |       `-- services/
 |           |-- config/
 |           |   `-- cache.py
@@ -144,9 +164,16 @@ pytest
 |           |   |-- sqlite_store.py
 |           |   `-- walker.py
 |           `-- embeddings/
-|               `-- generator.py
+|               |-- generator.py
+|               `-- model_store.py
+|       `-- server/
+|           |-- __init__.py
+|           |-- __main__.py
+|           `-- app.py
 `-- tests/
+    |-- conftest.py
     |-- test_indexing.py
     |-- test_query.py
+    |-- test_server.py
     `-- test_smoke.py
 ```

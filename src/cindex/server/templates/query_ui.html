@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cindex UI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+  h1 { font-size: 1.4rem; font-weight: 700; color: #7dd3fc; margin-bottom: 1.5rem; letter-spacing: .05em; }
+  .tabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
+  .tab-btn {
+    padding: .45rem 1.2rem; border: 1px solid #334155; background: #1e293b;
+    color: #94a3b8; border-radius: .4rem; cursor: pointer; font-size: .9rem; transition: all .15s;
+  }
+  .tab-btn.active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: .6rem; padding: 1.25rem; max-width: 860px; }
+  label { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .3rem; margin-top: .9rem; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=number], textarea {
+    width: 100%; padding: .5rem .75rem; background: #0f1117; border: 1px solid #334155;
+    border-radius: .4rem; color: #e2e8f0; font-size: .9rem; font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 80px; font-family: ui-monospace, monospace; font-size: .85rem; }
+  input:focus, textarea:focus { outline: 2px solid #0ea5e9; outline-offset: 0; }
+  .row { display: flex; gap: .75rem; }
+  .row > div { flex: 1; }
+  .meta { margin-bottom: 1rem; font-size: .85rem; color: #94a3b8; }
+  .meta code { color: #e2e8f0; }
+  button.submit {
+    margin-top: 1rem; padding: .55rem 1.5rem; background: #0ea5e9; border: none;
+    border-radius: .4rem; color: #fff; font-size: .9rem; cursor: pointer; transition: background .15s;
+  }
+  button.submit:hover { background: #38bdf8; }
+  button.submit:disabled { background: #334155; color: #64748b; cursor: default; }
+  .error { margin-top: .75rem; padding: .6rem .9rem; background: #450a0a; border: 1px solid #991b1b; border-radius: .4rem; font-size: .85rem; color: #fca5a5; display: none; }
+  .result-meta { margin-top: .9rem; font-size: .8rem; color: #64748b; }
+  .table-wrap { overflow-x: auto; margin-top: .6rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th { background: #0f1117; color: #7dd3fc; text-align: left; padding: .45rem .7rem; border-bottom: 1px solid #334155; white-space: nowrap; }
+  td { padding: .4rem .7rem; border-bottom: 1px solid #1e293b; color: #cbd5e1; word-break: break-all; }
+  tr:hover td { background: #172033; }
+  .empty { color: #475569; font-size: .85rem; margin-top: .6rem; }
+</style>
+</head>
+<body>
+<h1>cindex</h1>
+<p class="meta">Configured SQLite database: <code>{{SQLITE_DB}}</code></p>
+<p class="meta">Configured embedding model: <code>{{DEFAULT_MODEL}}</code></p>
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('sql', this)">SQL Query</button>
+  <button class="tab-btn" onclick="switchTab('sim', this)">Semantic Search</button>
+</div>
+
+<div id="panel-sql" class="panel active">
+  <div class="card">
+    <label for="sql-query">SQL</label>
+    <textarea id="sql-query" rows="4" placeholder="SELECT * FROM vertices LIMIT 20"></textarea>
+    <button class="submit" id="sql-btn" onclick="runSql()">Run</button>
+    <div class="error" id="sql-err"></div>
+    <div id="sql-results"></div>
+  </div>
+</div>
+
+<div id="panel-sim" class="panel">
+  <div class="card">
+    <label for="sim-text">Query text</label>
+    <input type="text" id="sim-text" placeholder="function that parses arguments">
+    <div class="row">
+      <div>
+        <label for="sim-label">Label filter</label>
+        <input type="text" id="sim-label" placeholder="function / class / module">
+      </div>
+      <div>
+        <label for="sim-k">Top-k</label>
+        <input type="number" id="sim-k" value="10" min="1" max="100" style="width:80px">
+      </div>
+    </div>
+    <button class="submit" id="sim-btn" onclick="runSim()">Search</button>
+    <div class="error" id="sim-err"></div>
+    <div id="sim-results"></div>
+  </div>
+</div>
+
+<script>
+function switchTab(name, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  el.classList.add('active');
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function clearError(id) {
+  const el = document.getElementById(id);
+  el.style.display = 'none';
+}
+
+function renderTable(containerId, metaHtml, columns, rows) {
+  const container = document.getElementById(containerId);
+  if (!rows.length) {
+    container.innerHTML = '<p class="empty">No results.</p>';
+    return;
+  }
+
+  const header = columns.map(c => `<th>${esc(c)}</th>`).join('');
+  const body = rows.map(r => {
+    const cells = Array.isArray(r)
+      ? r.map(v => `<td>${esc(v)}</td>`).join('')
+      : columns.map(c => `<td>${esc(r[c])}</td>`).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  container.innerHTML = `<div class="result-meta">${metaHtml}</div>
+    <div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function esc(v) {
+  if (v == null) return '<span style="color:#475569">null</span>';
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function runSql() {
+  clearError('sql-err');
+  const sql = document.getElementById('sql-query').value.trim();
+  if (!sql) {
+    showError('sql-err', 'SQL is required.');
+    return;
+  }
+
+  const btn = document.getElementById('sql-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  try {
+    const res = await fetch('/query/sql', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sql})
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError('sql-err', data.detail ?? JSON.stringify(data));
+      return;
+    }
+    renderTable('sql-results', `${data.rows.length} row(s)`, data.columns, data.rows);
+  } catch (e) {
+    showError('sql-err', e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run';
+  }
+}
+
+async function runSim() {
+  clearError('sim-err');
+  const text = document.getElementById('sim-text').value.trim();
+  const label = document.getElementById('sim-label').value.trim() || null;
+  const k = parseInt(document.getElementById('sim-k').value, 10);
+  if (!text) {
+    showError('sim-err', 'Query text is required.');
+    return;
+  }
+
+  const btn = document.getElementById('sim-btn');
+  btn.disabled = true;
+  btn.textContent = 'Searching...';
+  try {
+    const res = await fetch('/query/similar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text, k, label})
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError('sim-err', data.detail ?? JSON.stringify(data));
+      return;
+    }
+    const cols = data.rows.length ? Object.keys(data.rows[0]) : [];
+    const rowArrays = data.rows.map(r => cols.map(c => r[c]));
+    renderTable('sim-results', `${data.count} result(s)`, cols, rowArrays);
+  } catch (e) {
+    showError('sim-err', e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Search';
+  }
+}
+</script>
+</body>
+</html>
