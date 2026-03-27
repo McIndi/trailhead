@@ -1,9 +1,11 @@
 # cindex
 
-Command-line text embedding tool with:
+Command-line code indexing and text embedding tool with:
 
 - a single CLI command: cindex
 - text embeddings powered by sentence-transformers
+- code indexing powered by tree-sitter
+- optional graph persistence in a single SQLite file
 - a smoke test suite using pytest
 - modern packaging via pyproject.toml
 
@@ -46,6 +48,42 @@ cindex embed "A short sentence to embed" --cache-dir "C:\another\cache"
 
 The command prints the embedding as a JSON array of floats.
 
+Index a directory of Python source files:
+
+```powershell
+cindex index .
+```
+
+Persist the graph into a single SQLite file:
+
+```powershell
+cindex index . --sqlite-db ./.cindex/graph.db
+```
+
+Persist graph + embeddings into the same SQLite file:
+
+```powershell
+cindex index . \
+    --sqlite-db ./.cindex/graph.db \
+    --embed-model sentence-transformers/all-MiniLM-L6-v2
+```
+
+Optional embedding cache override:
+
+```powershell
+cindex index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
+```
+
+Append to an existing SQLite graph instead of replacing it:
+
+```powershell
+cindex index . --sqlite-db ./.cindex/graph.db --append
+```
+
+When `sqlite-vector` can be loaded, `cindex` also initializes vector search for
+the `vertex_embeddings.embedding` column. If extension loading is unavailable on
+your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
+
 You can also run the module directly:
 
 ```powershell
@@ -74,12 +112,20 @@ pytest
 |       |   |-- app.py
 |       |   `-- commands/
 |       |       |-- __init__.py
-|       |       `-- embed.py
+|       |       |-- embed.py
+|       |       `-- index.py
 |       `-- services/
 |           |-- config/
 |           |   `-- cache.py
+|           |-- indexing/
+|           |   |-- __init__.py
+|           |   |-- graph.py
+|           |   |-- parser.py
+|           |   |-- sqlite_store.py
+|           |   `-- walker.py
 |           `-- embeddings/
 |               `-- generator.py
 `-- tests/
+    |-- test_indexing.py
     `-- test_smoke.py
 ```

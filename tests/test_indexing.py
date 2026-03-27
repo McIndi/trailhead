@@ -1,6 +1,8 @@
 """Tests for the indexing service (property graph model + tree-sitter parser)."""
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 
@@ -359,3 +361,194 @@ class TestIndexDirectory:
         graph = index_directory(tmp_path)
         assert len(graph.vertices("module")) == 2
         assert len(graph.vertices("class")) == 2
+
+
+class TestSqliteStore:
+    def test_persist_graph_creates_db_and_saves_rows(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.sqlite_store import persist_graph
+
+        graph = PropertyGraph()
+        mod = graph.add_vertex("module", name="m", path="/tmp/m.py")
+        fn = graph.add_vertex("function", name="f", path="/tmp/m.py", line=1)
+        graph.add_edge("defines", mod, fn)
+
+        db = tmp_path / "graph.db"
+        v_count, e_count = persist_graph(graph, db)
+
+        assert db.exists()
+        assert v_count == 2
+        assert e_count == 1
+
+    def test_load_graph_round_trip(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.sqlite_store import load_graph
+        from cindex.services.indexing.sqlite_store import persist_graph
+
+        graph = PropertyGraph()
+        mod = graph.add_vertex("module", name="m", path="/tmp/m.py")
+        cls = graph.add_vertex("class", name="C", path="/tmp/m.py", line=2)
+        graph.add_edge("defines", mod, cls)
+
+        db = tmp_path / "graph.db"
+        persist_graph(graph, db)
+        loaded = load_graph(db)
+
+        assert len(loaded.vertices("module")) == 1
+        assert len(loaded.vertices("class")) == 1
+        assert len(loaded.edges("defines")) == 1
+
+    def test_persist_replace_mode_clears_existing_rows(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.sqlite_store import persist_graph
+
+        db = tmp_path / "graph.db"
+
+        g1 = PropertyGraph()
+        a = g1.add_vertex("module", name="a", path="/tmp/a.py")
+        b = g1.add_vertex("function", name="fa", path="/tmp/a.py", line=1)
+        g1.add_edge("defines", a, b)
+        persist_graph(g1, db)
+
+        g2 = PropertyGraph()
+        c = g2.add_vertex("module", name="c", path="/tmp/c.py")
+        d = g2.add_vertex("function", name="fc", path="/tmp/c.py", line=1)
+        g2.add_edge("defines", c, d)
+        v_count, e_count = persist_graph(g2, db, append=False)
+
+        assert v_count == 2
+        assert e_count == 1
+
+    def test_persist_append_mode_keeps_existing_rows(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.sqlite_store import persist_graph
+
+        db = tmp_path / "graph.db"
+
+        g1 = PropertyGraph()
+        a = g1.add_vertex("module", name="a", path="/tmp/a.py")
+        b = g1.add_vertex("function", name="fa", path="/tmp/a.py", line=1)
+        g1.add_edge("defines", a, b)
+        persist_graph(g1, db)
+
+        g2 = PropertyGraph()
+        c = g2.add_vertex("module", name="c", path="/tmp/c.py")
+        d = g2.add_vertex("function", name="fc", path="/tmp/c.py", line=1)
+        g2.add_edge("defines", c, d)
+        v_count, e_count = persist_graph(g2, db, append=True)
+
+        assert v_count == 4
+        assert e_count == 2
+
+    def test_persist_vertex_embeddings_writes_rows(self, tmp_path, monkeypatch):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.sqlite_store import persist_graph
+        from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
+
+        graph = PropertyGraph()
+        mod = graph.add_vertex("module", name="m", path="/tmp/m.py")
+        fn = graph.add_vertex("function", name="f", path="/tmp/m.py", line=1)
+        graph.add_edge("defines", mod, fn)
+
+        monkeypatch.setattr(
+            "cindex.services.indexing.sqlite_store.generate_embeddings",
+            lambda texts, model_name, cache_folder=None: [[0.1, 0.2, 0.3] for _ in texts],
+        )
+        monkeypatch.setattr(
+            "cindex.services.indexing.sqlite_store._try_initialize_sqlite_vector",
+            lambda conn, dimension: True,
+        )
+
+        db = tmp_path / "graph.db"
+        persist_graph(graph, db)
+        rows, dim, vector_ready = persist_vertex_embeddings(
+            graph,
+            db,
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+        )
+
+        assert rows == 2
+        assert dim == 3
+        assert vector_ready is True
+
+        with sqlite3.connect(db) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM vertex_embeddings").fetchone()[0]
+            stored_dim = conn.execute(
+                "SELECT DISTINCT dimension FROM vertex_embeddings"
+            ).fetchone()[0]
+            assert count == 2
+            assert stored_dim == 3
+
+    def test_persist_vertex_embeddings_replace_mode_clears_previous(self, tmp_path, monkeypatch):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.sqlite_store import persist_graph
+        from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
+
+        monkeypatch.setattr(
+            "cindex.services.indexing.sqlite_store.generate_embeddings",
+            lambda texts, model_name, cache_folder=None: [[0.1, 0.2] for _ in texts],
+        )
+
+        db = tmp_path / "graph.db"
+
+        g1 = PropertyGraph()
+        g1.add_vertex("module", name="a", path="/tmp/a.py")
+        persist_graph(g1, db)
+        persist_vertex_embeddings(g1, db, model_name="m1", append=False)
+
+        g2 = PropertyGraph()
+        g2.add_vertex("module", name="b", path="/tmp/b.py")
+        persist_graph(g2, db, append=False)
+        rows, _, _ = persist_vertex_embeddings(g2, db, model_name="m1", append=False)
+
+        assert rows == 1
+
+
+class TestIndexCommandSqlite:
+    def test_index_command_writes_sqlite_file(self, tmp_path):
+        from cindex.cli import app as cli
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.py").write_text("def hello():\n    pass\n")
+        db = tmp_path / "graph.db"
+
+        rc = cli.main(["index", str(src), "--sqlite-db", str(db)])
+
+        assert rc == 0
+        assert db.exists()
+
+    def test_index_command_embed_model_requires_sqlite_db(self, tmp_path):
+        from cindex.cli import app as cli
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.py").write_text("def hello():\n    pass\n")
+
+        rc = cli.main(["index", str(src), "--embed-model", "sentence-transformers/all-MiniLM-L6-v2"])
+        assert rc == 1
+
+    def test_index_command_embed_model_persists_vectors(self, tmp_path, monkeypatch):
+        from cindex.cli import app as cli
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "a.py").write_text("def hello():\n    pass\n")
+        db = tmp_path / "graph.db"
+
+        monkeypatch.setattr(
+            "cindex.cli.commands.index.persist_vertex_embeddings",
+            lambda graph, db_path, **kwargs: (2, 384, True),
+        )
+
+        rc = cli.main(
+            [
+                "index",
+                str(src),
+                "--sqlite-db",
+                str(db),
+                "--embed-model",
+                "sentence-transformers/all-MiniLM-L6-v2",
+            ]
+        )
+        assert rc == 0

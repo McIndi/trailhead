@@ -46,16 +46,32 @@ class PropertyGraph:
 
     # ── mutation ──────────────────────────────────────────────────────────────
 
-    def add_vertex(self, label: str, **properties: Any) -> Vertex:
-        v = Vertex(id=str(uuid.uuid4()), label=label, properties=dict(properties))
+    def add_vertex(
+        self,
+        label: str,
+        *,
+        vertex_id: str | None = None,
+        **properties: Any,
+    ) -> Vertex:
+        v = Vertex(
+            id=vertex_id or str(uuid.uuid4()),
+            label=label,
+            properties=dict(properties),
+        )
         self._vertices[v.id] = v
         return v
 
     def add_edge(
-        self, label: str, out_v: Vertex, in_v: Vertex, **properties: Any
+        self,
+        label: str,
+        out_v: Vertex,
+        in_v: Vertex,
+        *,
+        edge_id: str | None = None,
+        **properties: Any,
     ) -> Edge:
         e = Edge(
-            id=str(uuid.uuid4()),
+            id=edge_id or str(uuid.uuid4()),
             label=label,
             out_v=out_v,
             in_v=in_v,

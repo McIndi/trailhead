@@ -15,6 +15,7 @@ dependencies = [
   "sentence-transformers",
   "tree-sitter>=0.21",
   "tree-sitter-python>=0.21",
+  "sqliteai-vector",
 ]
 
 [project.optional-dependencies]
