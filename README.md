@@ -84,6 +84,24 @@ When `sqlite-vector` can be loaded, `cindex` also initializes vector search for
 the `vertex_embeddings.embedding` column. If extension loading is unavailable on
 your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
 
+Run a read-only SQL query against the SQLite database:
+
+```powershell
+cindex query sql --sqlite-db ./.cindex/graph.db --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
+```
+
+Run a semantic similarity query against stored vertex embeddings:
+
+```powershell
+cindex query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
+```
+
+Limit the search to a specific vertex label and format the output as JSON:
+
+```powershell
+cindex query similar "graph persistence" --sqlite-db ./.cindex/graph.db --label function --k 5 --output json
+```
+
 You can also run the module directly:
 
 ```powershell
@@ -113,7 +131,8 @@ pytest
 |       |   `-- commands/
 |       |       |-- __init__.py
 |       |       |-- embed.py
-|       |       `-- index.py
+|       |       |-- index.py
+|       |       `-- query.py
 |       `-- services/
 |           |-- config/
 |           |   `-- cache.py
@@ -121,11 +140,13 @@ pytest
 |           |   |-- __init__.py
 |           |   |-- graph.py
 |           |   |-- parser.py
+|           |   |-- query.py
 |           |   |-- sqlite_store.py
 |           |   `-- walker.py
 |           `-- embeddings/
 |               `-- generator.py
 `-- tests/
     |-- test_indexing.py
+    |-- test_query.py
     `-- test_smoke.py
 ```
