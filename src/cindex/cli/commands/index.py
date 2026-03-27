@@ -9,6 +9,7 @@ from pathlib import Path
 from cindex.services.config import get_cache_dir
 from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.sqlite_store import persist_graph
+from cindex.services.indexing.sqlite_store import persist_indexed_files
 from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
 from cindex.services.indexing.walker import index_directory
 
@@ -119,6 +120,9 @@ def run(args: argparse.Namespace) -> int:
                     "Could not initialize sqlite-vector extension. "
                     "Embeddings were still persisted as FLOAT32 BLOBs."
                 )
+
+        indexed_file_count = persist_indexed_files(root, db_path, append=args.append)
+        logger.info("Recorded %d indexed file snapshot row(s) in %s", indexed_file_count, db_path)
 
     if args.output == "json":
         _print_json(graph)

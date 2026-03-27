@@ -14,6 +14,7 @@ from pathlib import Path
 from cindex.services.embeddings import generate_embeddings
 from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.graph import Vertex
+from cindex.services.indexing.parser import parse_python_file
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS vertices (
@@ -28,17 +29,22 @@ CREATE TABLE IF NOT EXISTS edges (
   out_v_id TEXT NOT NULL,
   in_v_id TEXT NOT NULL,
   properties_json TEXT NOT NULL,
-    FOREIGN KEY(out_v_id) REFERENCES vertices(id) ON DELETE CASCADE,
-    FOREIGN KEY(in_v_id) REFERENCES vertices(id) ON DELETE CASCADE
+  FOREIGN KEY(out_v_id) REFERENCES vertices(id) ON DELETE CASCADE,
+  FOREIGN KEY(in_v_id) REFERENCES vertices(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS vertex_embeddings (
-    vertex_id TEXT PRIMARY KEY,
-    model_name TEXT NOT NULL,
-    source_text TEXT NOT NULL,
-    dimension INTEGER NOT NULL,
-    embedding BLOB NOT NULL,
-    FOREIGN KEY(vertex_id) REFERENCES vertices(id) ON DELETE CASCADE
+  vertex_id TEXT PRIMARY KEY,
+  model_name TEXT NOT NULL,
+  source_text TEXT NOT NULL,
+  dimension INTEGER NOT NULL,
+  embedding BLOB NOT NULL,
+  FOREIGN KEY(vertex_id) REFERENCES vertices(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS indexed_files (
+  path TEXT PRIMARY KEY,
+  mtime_ns INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_vertices_label ON vertices(label);
@@ -46,10 +52,11 @@ CREATE INDEX IF NOT EXISTS idx_edges_label ON edges(label);
 CREATE INDEX IF NOT EXISTS idx_edges_out_v ON edges(out_v_id);
 CREATE INDEX IF NOT EXISTS idx_edges_in_v ON edges(in_v_id);
 CREATE INDEX IF NOT EXISTS idx_vertex_embeddings_model ON vertex_embeddings(model_name);
+CREATE INDEX IF NOT EXISTS idx_indexed_files_mtime ON indexed_files(mtime_ns);
 """
 
 SUPPORTED_VECTOR_VERTEX_LABELS: frozenset[str] = frozenset(
-        {"module", "class", "function", "external"}
+    {"module", "class", "function", "external"}
 )
 
 
@@ -149,13 +156,13 @@ def persist_vertex_embeddings(
             """,
             [
                 (
-                    vertices[i].id,
+                    vertices[index].id,
                     model_name,
-                    texts[i],
-                    len(embeddings[i]),
-                    _vector_to_blob(embeddings[i]),
+                    texts[index],
+                    len(embeddings[index]),
+                    _vector_to_blob(embeddings[index]),
                 )
-                for i in range(len(vertices))
+                for index in range(len(vertices))
             ],
         )
 
@@ -208,6 +215,92 @@ def load_graph(db_path: Path) -> PropertyGraph:
     return graph
 
 
+def persist_indexed_files(root: Path, db_path: Path, *, append: bool = False) -> int:
+    """Persist a snapshot of indexed source file mtimes for *root*."""
+    files = sorted(
+        path.resolve()
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix == ".py"
+    )
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.executescript(SCHEMA_SQL)
+        if not append:
+            conn.execute("DELETE FROM indexed_files")
+
+        conn.executemany(
+            "INSERT OR REPLACE INTO indexed_files(path, mtime_ns) VALUES (?, ?)",
+            [(str(path), path.stat().st_mtime_ns) for path in files],
+        )
+
+        count = conn.execute("SELECT COUNT(*) FROM indexed_files").fetchone()[0]
+
+    return int(count)
+
+
+def get_indexed_files(db_path: Path) -> dict[str, int]:
+    """Return the currently recorded file index state keyed by absolute path."""
+    if not db_path.exists():
+        return {}
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.executescript(SCHEMA_SQL)
+        rows = conn.execute("SELECT path, mtime_ns FROM indexed_files").fetchall()
+
+    return {str(path): int(mtime_ns) for path, mtime_ns in rows}
+
+
+def reindex_file(
+    db_path: Path,
+    path: Path,
+    *,
+    model_name: str | None = None,
+    cache_folder: str | None = None,
+    initialize_vector_extension: bool = True,
+) -> tuple[int, int]:
+    """Incrementally replace the indexed contents for a single file path."""
+    resolved_path = path.resolve()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.executescript(SCHEMA_SQL)
+
+        _delete_vertices_for_path(conn, str(resolved_path))
+
+        embedding_candidates: list[tuple[str, str, str]] = []
+        if resolved_path.exists() and resolved_path.is_file() and resolved_path.suffix == ".py":
+            graph = PropertyGraph()
+            parse_python_file(resolved_path, graph)
+            embedding_candidates = _upsert_graph_slice(conn, graph)
+            conn.execute(
+                "INSERT OR REPLACE INTO indexed_files(path, mtime_ns) VALUES (?, ?)",
+                (str(resolved_path), resolved_path.stat().st_mtime_ns),
+            )
+        else:
+            conn.execute("DELETE FROM indexed_files WHERE path = ?", (str(resolved_path),))
+
+        _delete_orphan_external_vertices(conn)
+
+        embedding_rows = _persist_embedding_candidates(
+            conn,
+            embedding_candidates,
+            model_name=model_name,
+            cache_folder=cache_folder,
+            initialize_vector_extension=initialize_vector_extension,
+        )
+
+        vertex_count = conn.execute(
+            "SELECT COUNT(*) FROM vertices WHERE json_extract(properties_json, '$.path') = ?",
+            (str(resolved_path),),
+        ).fetchone()[0]
+
+    return int(vertex_count), int(embedding_rows)
+
+
 def _vertex_text(vertex: Vertex) -> str:
     name = str(vertex.properties.get("name", ""))
     path = str(vertex.properties.get("path", ""))
@@ -223,6 +316,131 @@ def _vector_to_blob(values: list[float]) -> bytes:
     return struct.pack(f"<{len(values)}f", *values)
 
 
+def _delete_vertices_for_path(conn: sqlite3.Connection, path: str) -> None:
+    conn.execute(
+        """
+        DELETE FROM vertices
+        WHERE label IN ('module', 'class', 'function')
+          AND json_extract(properties_json, '$.path') = ?
+        """,
+        (path,),
+    )
+
+
+def _delete_orphan_external_vertices(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        DELETE FROM vertices
+        WHERE label = 'external'
+          AND NOT EXISTS (SELECT 1 FROM edges WHERE out_v_id = vertices.id OR in_v_id = vertices.id)
+        """
+    )
+
+
+def _upsert_graph_slice(
+    conn: sqlite3.Connection,
+    graph: PropertyGraph,
+) -> list[tuple[str, str, str]]:
+    vertex_id_map: dict[str, str] = {}
+    embedding_candidates: list[tuple[str, str, str]] = []
+
+    for vertex in graph.vertices():
+        properties_json = json.dumps(vertex.properties, sort_keys=True)
+        if vertex.label == "external":
+            existing_row = conn.execute(
+                """
+                SELECT id FROM vertices
+                WHERE label = 'external'
+                  AND json_extract(properties_json, '$.name') = ?
+                LIMIT 1
+                """,
+                (vertex.properties.get("name"),),
+            ).fetchone()
+            if existing_row is not None:
+                vertex_id_map[vertex.id] = str(existing_row[0])
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                    (vertex.id, vertex.label, properties_json),
+                )
+                vertex_id_map[vertex.id] = vertex.id
+        else:
+            conn.execute(
+                "INSERT OR REPLACE INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                (vertex.id, vertex.label, properties_json),
+            )
+            vertex_id_map[vertex.id] = vertex.id
+
+        embedding_candidates.append((vertex_id_map[vertex.id], vertex.label, _vertex_text(vertex)))
+
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO edges(id, label, out_v_id, in_v_id, properties_json)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                edge.id,
+                edge.label,
+                vertex_id_map[edge.out_v.id],
+                vertex_id_map[edge.in_v.id],
+                json.dumps(edge.properties, sort_keys=True),
+            )
+            for edge in graph.edges()
+        ],
+    )
+
+    return embedding_candidates
+
+
+def _persist_embedding_candidates(
+    conn: sqlite3.Connection,
+    embedding_candidates: list[tuple[str, str, str]],
+    *,
+    model_name: str | None,
+    cache_folder: str | None,
+    initialize_vector_extension: bool,
+) -> int:
+    if not model_name:
+        return 0
+
+    supported_candidates = [
+        (vertex_id, label, text)
+        for vertex_id, label, text in embedding_candidates
+        if label in SUPPORTED_VECTOR_VERTEX_LABELS
+    ]
+    if not supported_candidates:
+        return 0
+
+    texts = [text for _, _, text in supported_candidates]
+    embeddings = generate_embeddings(texts, model_name=model_name, cache_folder=cache_folder)
+    if not embeddings:
+        return 0
+
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO vertex_embeddings(
+            vertex_id, model_name, source_text, dimension, embedding
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                supported_candidates[index][0],
+                model_name,
+                supported_candidates[index][2],
+                len(embeddings[index]),
+                _vector_to_blob(embeddings[index]),
+            )
+            for index in range(len(supported_candidates))
+        ],
+    )
+
+    if initialize_vector_extension and embeddings:
+        _try_initialize_sqlite_vector(conn, len(embeddings[0]))
+
+    return len(supported_candidates)
+
+
 def _try_initialize_sqlite_vector(conn: sqlite3.Connection, dimension: int) -> bool:
     if not _try_load_sqlite_vector_extension(conn):
         return False
@@ -231,7 +449,6 @@ def _try_initialize_sqlite_vector(conn: sqlite3.Connection, dimension: int) -> b
     try:
         conn.execute("SELECT vector_init('vertex_embeddings', 'embedding', ?)", (config,))
     except sqlite3.DatabaseError:
-        # vector_init can fail if already initialized for the same table/column.
         return True
     return True
 

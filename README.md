@@ -48,10 +48,10 @@ cindex embed "A short sentence to embed" --cache-dir "C:\another\cache"
 
 The command prints the embedding as a JSON array of floats.
 
-Run the warm-model API server so the embedding model stays resident in memory:
+Run the warm-model API server with a background indexer. The server watches the source tree, keeps the SQLite graph fresh, and reuses the loaded embedding model across index updates:
 
 ```powershell
-cindex serve --model sentence-transformers/all-MiniLM-L6-v2
+cindex serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-MiniLM-L6-v2
 ```
 
 Then call the API from another terminal:
@@ -109,16 +109,28 @@ Run a semantic similarity query against stored vertex embeddings:
 cindex query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
 ```
 
-The same semantic query is also available over HTTP once the server is running:
+The same semantic query is also available over HTTP once the server is running. The server owns the configured SQLite database path, so the browser or API client only sends the query payload:
 
 ```powershell
-curl -X POST http://127.0.0.1:8000/query/similar -H "Content-Type: application/json" -d '{"sqlite_db":".cindex/graph.db","text":"find sqlite vector initialization code"}'
+curl -X POST http://127.0.0.1:8000/query/similar -H "Content-Type: application/json" -d '{"text":"find sqlite vector initialization code"}'
 ```
 
 Limit the search to a specific vertex label and format the output as JSON:
 
 ```powershell
 cindex query similar "graph persistence" --sqlite-db ./.cindex/graph.db --label function --k 5 --output json
+```
+
+Search graph vertices over HTTP:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/graph/vertices -H "Content-Type: application/json" -d '{"name":"persist","label":"function"}'
+```
+
+Traverse a local subgraph from a known vertex id:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/graph/traverse -H "Content-Type: application/json" -d '{"vertex_id":"<vertex-id>","direction":"both","depth":1}'
 ```
 
 You can also run the module directly:
@@ -153,12 +165,20 @@ pytest
 |       |       |-- index.py
 |       |       |-- query.py
 |       |       `-- serve.py
+|       |-- server/
+|       |   |-- __init__.py
+|       |   |-- __main__.py
+|       |   |-- app.py
+|       |   `-- templates/
+|       |       `-- query_ui.html
 |       `-- services/
 |           |-- config/
 |           |   `-- cache.py
 |           |-- indexing/
 |           |   |-- __init__.py
 |           |   |-- graph.py
+|           |   |-- graph_query.py
+|           |   |-- live_indexer.py
 |           |   |-- parser.py
 |           |   |-- query.py
 |           |   |-- sqlite_store.py
@@ -166,10 +186,6 @@ pytest
 |           `-- embeddings/
 |               |-- generator.py
 |               `-- model_store.py
-|       `-- server/
-|           |-- __init__.py
-|           |-- __main__.py
-|           `-- app.py
 `-- tests/
     |-- conftest.py
     |-- test_indexing.py

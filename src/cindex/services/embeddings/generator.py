@@ -33,9 +33,6 @@ def generate_embeddings(
     model = get_embedding_model(model_name, cache_folder=cache_folder)
     embeddings = model.encode(list(texts))
 
-    if len(texts) == 1:
-        return [_normalize_embedding(embeddings)]
-
     return [_normalize_embedding(embedding) for embedding in embeddings]
 
 

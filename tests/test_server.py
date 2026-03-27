@@ -44,6 +44,7 @@ class TestServerApp:
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
         assert response.json()["sqlite_db"] == configured_db
+        assert response.json()["indexer_enabled"] is False
 
     def test_embed_endpoint_uses_embedding_service(self, monkeypatch):
         from cindex.server.app import create_app
@@ -82,6 +83,62 @@ class TestServerApp:
         body = response.json()
         assert body["columns"] == ["id", "name"]
         assert body["rows"] == [{"id": 1, "name": "alpha"}]
+
+    def test_graph_vertices_endpoint_returns_matches(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("f1", "function", '{"name": "alpha", "path": "/tmp/a.py", "line": 10}'),
+            )
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
+        response = client.post(
+            "/graph/vertices",
+            json={"name": "alp", "label": "function"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["count"] == 1
+        assert response.json()["rows"][0]["vertex_id"] == "f1"
+
+    def test_graph_traverse_endpoint_returns_subgraph(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "CREATE TABLE edges (id TEXT PRIMARY KEY, label TEXT NOT NULL, out_v_id TEXT NOT NULL, in_v_id TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("m1", "module", '{"name": "alpha", "path": "/tmp/a.py"}'),
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("f1", "function", '{"name": "alpha_fn", "path": "/tmp/a.py", "line": 2}'),
+            )
+            conn.execute(
+                "INSERT INTO edges(id, label, out_v_id, in_v_id, properties_json) VALUES (?, ?, ?, ?, ?)",
+                ("d1", "defines", "m1", "f1", '{}'),
+            )
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
+        response = client.post(
+            "/graph/traverse",
+            json={"vertex_id": "m1", "direction": "out", "depth": 1},
+        )
+
+        assert response.status_code == 200
+        assert {vertex["vertex_id"] for vertex in response.json()["vertices"]} == {"m1", "f1"}
 
     def test_query_similar_endpoint_returns_matches(self, tmp_path, monkeypatch):
         from cindex.server.app import create_app
@@ -164,7 +221,6 @@ class TestServerApp:
         assert response.status_code == 400
         assert "Repo id must use alphanumeric chars" in response.json()["detail"]
 
-
     def test_ui_uses_configured_database_path(self, tmp_path):
         from cindex.server.app import create_app
 
@@ -186,11 +242,13 @@ class TestServeCommand:
         captured: dict[str, object] = {}
         sentinel_app = object()
 
-        def fake_create_app(*, default_model, cache_dir, sqlite_db, preload_default_model):
+        def fake_create_app(*, default_model, cache_dir, sqlite_db, watch_directory, preload_default_model, run_indexer):
             captured["default_model"] = default_model
             captured["cache_dir"] = cache_dir
             captured["sqlite_db"] = sqlite_db
+            captured["watch_directory"] = watch_directory
             captured["preload_default_model"] = preload_default_model
+            captured["run_indexer"] = run_indexer
             return sentinel_app
 
         def fake_run(app, host, port):
@@ -206,6 +264,7 @@ class TestServeCommand:
                 "Args",
                 (),
                 {
+                    "directory": ".",
                     "host": "127.0.0.1",
                     "port": 9000,
                     "model": "model-a",
@@ -220,3 +279,4 @@ class TestServeCommand:
         assert captured["app"] is sentinel_app
         assert captured["default_model"] == "model-a"
         assert captured["sqlite_db"] == "data.db"
+        assert captured["run_indexer"] is True

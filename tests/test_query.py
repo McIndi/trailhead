@@ -33,6 +33,69 @@ class TestExecuteSqlQuery:
             raise AssertionError("Expected ValueError for non-read-only SQL")
 
 
+class TestGraphQueries:
+    def test_search_vertices_filters_rows(self, tmp_path):
+        from cindex.services.indexing.graph_query import search_vertices
+
+        db = tmp_path / "query.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("m1", "module", '{"name": "alpha", "path": "/tmp/a.py"}'),
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("f1", "function", '{"name": "alpha_fn", "path": "/tmp/a.py", "line": 2}'),
+            )
+
+        rows = search_vertices(db, name="alpha", label="function")
+
+        assert len(rows) == 1
+        assert rows[0]["vertex_id"] == "f1"
+        assert rows[0]["name"] == "alpha_fn"
+
+    def test_traverse_graph_returns_neighbors(self, tmp_path):
+        from cindex.services.indexing.graph_query import traverse_graph
+
+        db = tmp_path / "query.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "CREATE TABLE edges (id TEXT PRIMARY KEY, label TEXT NOT NULL, out_v_id TEXT NOT NULL, in_v_id TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("m1", "module", '{"name": "alpha", "path": "/tmp/a.py"}'),
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("f1", "function", '{"name": "alpha_fn", "path": "/tmp/a.py", "line": 2}'),
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("e1", "external", '{"name": "pathlib"}'),
+            )
+            conn.execute(
+                "INSERT INTO edges(id, label, out_v_id, in_v_id, properties_json) VALUES (?, ?, ?, ?, ?)",
+                ("d1", "defines", "m1", "f1", '{}'),
+            )
+            conn.execute(
+                "INSERT INTO edges(id, label, out_v_id, in_v_id, properties_json) VALUES (?, ?, ?, ?, ?)",
+                ("i1", "imports", "m1", "e1", '{}'),
+            )
+
+        subgraph = traverse_graph(db, vertex_id="m1", direction="out", depth=1)
+
+        assert subgraph["center_vertex_id"] == "m1"
+        assert {vertex["vertex_id"] for vertex in subgraph["vertices"]} == {"m1", "f1", "e1"}
+        assert {edge["edge_id"] for edge in subgraph["edges"]} == {"d1", "i1"}
+
+
 class TestFindSimilarVertices:
     def test_find_similar_vertices_returns_ranked_rows(self, tmp_path, monkeypatch):
         from cindex.services.indexing.query import find_similar_vertices

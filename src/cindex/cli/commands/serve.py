@@ -19,8 +19,14 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Run the FastAPI server with warmed embedding models.",
         description=(
             "Start a long-lived API process so embedding models can stay loaded "
-            "in memory across requests."
+            "in memory across requests while a background indexer keeps the SQLite index fresh."
         ),
+    )
+    parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Root directory to watch and index (default: current directory).",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1).")
     parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000).")
@@ -54,11 +60,14 @@ def run(args: argparse.Namespace) -> int:
     if cache_dir:
         cache_dir = str(Path(cache_dir).resolve())
 
+    watch_directory = str(Path(args.directory).resolve())
+
     logger.info(
-        "Starting cindex API server on %s:%d with model %s",
+        "Starting cindex API server on %s:%d with model %s watching %s",
         args.host,
         args.port,
         args.model,
+        watch_directory,
     )
 
     from cindex.server.app import create_app
@@ -67,7 +76,9 @@ def run(args: argparse.Namespace) -> int:
         default_model=args.model,
         cache_dir=cache_dir,
         sqlite_db=args.sqlite_db,
+        watch_directory=watch_directory,
         preload_default_model=not args.no_preload,
+        run_indexer=True,
     )
 
     uvicorn.run(app, host=args.host, port=args.port)
