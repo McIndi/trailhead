@@ -10,6 +10,7 @@ from cindex.services.indexing.sqlite_store import persist_graph
 from cindex.services.indexing.sqlite_store import persist_indexed_files
 from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
 from cindex.services.indexing.sqlite_store import reindex_file
+from cindex.services.indexing.sqlite_store import vector_to_blob
 from cindex.services.indexing.walker import index_directory
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "persist_indexed_files",
     "persist_vertex_embeddings",
     "reindex_file",
+    "vector_to_blob",
     "get_indexed_files",
     "load_graph",
     "search_vertices",

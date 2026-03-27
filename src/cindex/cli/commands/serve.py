@@ -70,6 +70,11 @@ def run(args: argparse.Namespace) -> int:
         watch_directory,
     )
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)-8s %(name)s — %(message)s",
+    )
+
     from cindex.server.app import create_app
 
     app = create_app(

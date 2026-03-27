@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import importlib.resources
 import sqlite3
-import struct
 from pathlib import Path
 from typing import Any
 
 from cindex.services.embeddings import generate_embedding
+from cindex.services.indexing.sqlite_store import vector_to_blob
 
 READ_ONLY_PREFIXES: tuple[str, ...] = ("select", "with", "pragma", "explain")
 
@@ -55,7 +55,7 @@ def find_similar_vertices(
             model_name=model_name,
             cache_folder=cache_folder,
         )
-        query_blob = _vector_to_blob(vector)
+        query_blob = vector_to_blob(vector)
 
         where_clause = "WHERE v.label = ?" if label else ""
         params: tuple[Any, ...]
@@ -113,5 +113,3 @@ def _prepare_vector_search(conn: sqlite3.Connection, dimension: int) -> None:
     conn.execute("SELECT vector_init('vertex_embeddings', 'embedding', ?)", (config,))
 
 
-def _vector_to_blob(values: list[float]) -> bytes:
-    return struct.pack(f"<{len(values)}f", *values)

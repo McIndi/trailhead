@@ -160,7 +160,7 @@ def persist_vertex_embeddings(
                     model_name,
                     texts[index],
                     len(embeddings[index]),
-                    _vector_to_blob(embeddings[index]),
+                    vector_to_blob(embeddings[index]),
                 )
                 for index in range(len(vertices))
             ],
@@ -310,7 +310,7 @@ def _vertex_text(vertex: Vertex) -> str:
     return f"{vertex.label} {name} {path}:{line}".strip()
 
 
-def _vector_to_blob(values: list[float]) -> bytes:
+def vector_to_blob(values: list[float]) -> bytes:
     if not values:
         return b""
     return struct.pack(f"<{len(values)}f", *values)
@@ -429,7 +429,7 @@ def _persist_embedding_candidates(
                 model_name,
                 supported_candidates[index][2],
                 len(embeddings[index]),
-                _vector_to_blob(embeddings[index]),
+                vector_to_blob(embeddings[index]),
             )
             for index in range(len(supported_candidates))
         ],

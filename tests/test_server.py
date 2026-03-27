@@ -233,6 +233,7 @@ class TestServerApp:
         assert str(db.resolve()) in response.text
         assert 'id="sql-db"' not in response.text
         assert 'id="sim-model"' not in response.text
+        assert "Visualize" in response.text
 
 
 class TestServeCommand:
