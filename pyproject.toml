@@ -5,13 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cindex"
 dynamic = ["version"]
-description = "A minimal command-line Python project scaffold for cindex."
+description = "A command-line tool for generating text embeddings with sentence-transformers."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
   { name = "Cliff" }
 ]
-dependencies = []
+dependencies = [
+  "sentence-transformers",
+  "tree-sitter>=0.21",
+  "tree-sitter-python>=0.21",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -32,3 +36,5 @@ version = { attr = "cindex.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+log_cli = true
+log_cli_level = "INFO"

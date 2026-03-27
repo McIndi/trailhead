@@ -1,10 +1,11 @@
 # cindex
 
-Minimal Python project scaffold with:
+Command-line text embedding tool with:
 
-- a single CLI command: `cindex`
-- a smoke test suite using `pytest`
-- modern packaging via `pyproject.toml`
+- a single CLI command: cindex
+- text embeddings powered by sentence-transformers
+- a smoke test suite using pytest
+- modern packaging via pyproject.toml
 
 ## Requirements
 
@@ -23,16 +24,32 @@ python -m pip install -e .[dev]
 
 ## Usage
 
-Run the installed command:
+Generate an embedding with the embed subcommand:
 
 ```powershell
-cindex
+cindex embed "A short sentence to embed"
 ```
+
+Specify a model explicitly:
+
+```powershell
+cindex embed "A short sentence to embed" --model sentence-transformers/all-mpnet-base-v2
+```
+
+Optional cache override:
+
+```powershell
+$env:CINDEX_CACHE_DIR = "C:\models\cache"
+cindex embed "A short sentence to embed"
+cindex embed "A short sentence to embed" --cache-dir "C:\another\cache"
+```
+
+The command prints the embedding as a JSON array of floats.
 
 You can also run the module directly:
 
 ```powershell
-python -m cindex
+python -m cindex embed "A short sentence to embed"
 ```
 
 ## Tests
@@ -51,7 +68,18 @@ pytest
 |   `-- cindex/
 |       |-- __init__.py
 |       |-- __main__.py
-|       `-- cli.py
+|       |-- cli/
+|       |   |-- __init__.py
+|       |   |-- __main__.py
+|       |   |-- app.py
+|       |   `-- commands/
+|       |       |-- __init__.py
+|       |       `-- embed.py
+|       `-- services/
+|           |-- config/
+|           |   `-- cache.py
+|           `-- embeddings/
+|               `-- generator.py
 `-- tests/
     `-- test_smoke.py
 ```
