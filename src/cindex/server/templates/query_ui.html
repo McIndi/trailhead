@@ -6,7 +6,7 @@
 <title>cindex UI</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+  body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 1rem 1.5rem; }
   h1 { font-size: 1.4rem; font-weight: 700; color: #7dd3fc; margin-bottom: 1.5rem; letter-spacing: .05em; }
   .tabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
   .tab-btn {
@@ -16,7 +16,7 @@
   .tab-btn.active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
   .panel { display: none; }
   .panel.active { display: block; }
-  .card { background: #1e293b; border: 1px solid #334155; border-radius: .6rem; padding: 1.25rem; max-width: 860px; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: .6rem; padding: 1.25rem; }
   label { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .3rem; margin-top: .9rem; }
   label:first-child { margin-top: 0; }
   input[type=text], input[type=number], textarea {
@@ -48,11 +48,36 @@
   .hint { margin-top: .4rem; color: #64748b; font-size: .78rem; }
   .viz-stage { margin-top: 1rem; border: 1px solid #334155; border-radius: .5rem; overflow: hidden; background: #0b1220; }
   #viz-svg { width: 100%; height: 520px; display: block; }
+  .viz-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: .9rem; margin-top: .75rem; }
+  .viz-details {
+    border: 1px solid #334155; border-radius: .5rem; background: #0b1220;
+    padding: .75rem .85rem; color: #cbd5e1; font-size: .82rem;
+    max-height: 520px; overflow: auto;
+  }
+  .viz-details h3 { color: #7dd3fc; font-size: .88rem; margin-bottom: .45rem; }
+  .viz-details .kv { margin-bottom: .35rem; }
+  .viz-details .k { color: #94a3b8; margin-right: .35rem; }
+  .viz-details pre {
+    white-space: pre-wrap; word-break: break-word; margin-top: .25rem;
+    padding: .45rem .55rem; border: 1px solid #334155; border-radius: .4rem;
+    background: #0f172a; color: #e2e8f0; font-size: .76rem;
+  }
   .legend { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .65rem; font-size: .78rem; color: #94a3b8; }
   .pill { border: 1px solid #334155; padding: .15rem .45rem; border-radius: 999px; }
   @media (max-width: 860px) {
     .viz-controls { grid-template-columns: 1fr; }
+    .viz-layout { grid-template-columns: 1fr; }
     #viz-svg { height: 420px; }
+  }
+  details.src-toggle { cursor: pointer; }
+  details.src-toggle summary { color: #38bdf8; font-size: .78rem; list-style: none; user-select: none; padding: .1rem 0; }
+  details.src-toggle summary::-webkit-details-marker { display: none; }
+  .src-block {
+    white-space: pre; overflow-x: auto; word-break: normal;
+    margin-top: .35rem; padding: .45rem .55rem;
+    border: 1px solid #334155; border-radius: .4rem;
+    background: #0f172a; color: #e2e8f0;
+    font-size: .76rem; font-family: ui-monospace, monospace;
   }
 </style>
 </head>
@@ -63,6 +88,7 @@
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('sql', this)">SQL Query</button>
   <button class="tab-btn" onclick="switchTab('sim', this)">Semantic Search</button>
+  <button class="tab-btn" onclick="switchTab('starter', this)">Starter Queries</button>
   <button class="tab-btn" onclick="switchTab('viz', this)">Visualize</button>
 </div>
 
@@ -93,6 +119,21 @@
     <button class="submit" id="sim-btn" onclick="runSim()">Search</button>
     <div class="error" id="sim-err"></div>
     <div id="sim-results"></div>
+  </div>
+</div>
+
+<div id="panel-starter" class="panel">
+  <div class="card">
+    <label for="starter-select">Starter query</label>
+    <select id="starter-select" style="width:100%; padding:.5rem .75rem; background:#0f1117; border:1px solid #334155; border-radius:.4rem; color:#e2e8f0; font-size:.9rem;" onchange="showStarterTemplate()">
+      <option value="">Loading templates...</option>
+    </select>
+    <div id="starter-description" class="hint">Pick a starter query to preview and run.</div>
+    <label for="starter-sql" style="margin-top:.9rem;">SQL preview</label>
+    <textarea id="starter-sql" rows="12" readonly></textarea>
+    <button class="submit" id="starter-run-btn" onclick="runStarterTemplate()">Run Starter Query</button>
+    <div class="error" id="starter-err"></div>
+    <div id="starter-results"></div>
   </div>
 </div>
 
@@ -158,9 +199,16 @@
 
     <div class="error" id="viz-err"></div>
     <div id="viz-results" class="result-meta" style="margin-top:.9rem;"></div>
+    <div id="viz-center" class="result-meta">Current center: <span style="color:#64748b">none</span></div>
     <div class="legend" id="viz-legend"></div>
-    <div class="viz-stage">
-      <svg id="viz-svg" viewBox="0 0 900 520" aria-label="Graph visualization"></svg>
+    <div class="viz-layout">
+      <div class="viz-stage">
+        <svg id="viz-svg" viewBox="0 0 900 520" aria-label="Graph visualization"></svg>
+      </div>
+      <div class="viz-details" id="viz-details">
+        <h3>Node Details</h3>
+        <p style="color:#64748b;">Render a graph to inspect vertex metadata here.</p>
+      </div>
     </div>
   </div>
 </div>
@@ -184,6 +232,14 @@ function clearError(id) {
   el.style.display = 'none';
 }
 
+function renderCell(col, val) {
+  if ((col === 'source' || col === 'docstring') && val != null) {
+    const label = col === 'source' ? 'view source' : 'view docstring';
+    return `<details class="src-toggle"><summary>${label}</summary><pre class="src-block">${esc(String(val))}</pre></details>`;
+  }
+  return esc(val);
+}
+
 function renderTable(containerId, metaHtml, columns, rows) {
   const container = document.getElementById(containerId);
   if (!rows.length) {
@@ -194,8 +250,8 @@ function renderTable(containerId, metaHtml, columns, rows) {
   const header = columns.map(c => `<th>${esc(c)}</th>`).join('');
   const body = rows.map(r => {
     const cells = Array.isArray(r)
-      ? r.map(v => `<td>${esc(v)}</td>`).join('')
-      : columns.map(c => `<td>${esc(r[c])}</td>`).join('');
+      ? r.map((v, i) => `<td>${renderCell(columns[i], v)}</td>`).join('')
+      : columns.map(c => `<td>${renderCell(c, r[c])}</td>`).join('');
     return `<tr>${cells}</tr>`;
   }).join('');
 
@@ -230,6 +286,129 @@ function shortPath(path) {
 
 let vizVertexRows = [];
 let vizGraphState = null;
+let starterTemplates = [];
+
+function titleizeCategory(category) {
+  if (!category) return 'Other';
+  return String(category)
+    .split('_')
+    .map(part => part ? part[0].toUpperCase() + part.slice(1) : part)
+    .join(' ');
+}
+
+async function loadStarterTemplates() {
+  clearError('starter-err');
+  const select = document.getElementById('starter-select');
+  select.innerHTML = '<option value="">Loading templates...</option>';
+  try {
+    const res = await fetch('/query/templates');
+    const data = await res.json();
+    if (!res.ok) {
+      showError('starter-err', data.detail ?? JSON.stringify(data));
+      select.innerHTML = '<option value="">Failed to load templates</option>';
+      return;
+    }
+
+    starterTemplates = data.templates || [];
+    select.innerHTML = '';
+    if (!starterTemplates.length) {
+      select.innerHTML = '<option value="">No templates available</option>';
+      return;
+    }
+
+    const byCategory = new Map();
+    for (const template of starterTemplates) {
+      const category = template.category || 'other';
+      if (!byCategory.has(category)) {
+        byCategory.set(category, []);
+      }
+      byCategory.get(category).push(template);
+    }
+
+    const categories = Array.from(byCategory.keys()).sort();
+    for (const category of categories) {
+      const optGroup = document.createElement('optgroup');
+      optGroup.label = titleizeCategory(category);
+      for (const template of byCategory.get(category)) {
+        const opt = document.createElement('option');
+        opt.value = template.name;
+        opt.textContent = `${template.title} (${template.name})`;
+        optGroup.appendChild(opt);
+      }
+      select.appendChild(optGroup);
+    }
+
+    showStarterTemplate();
+  } catch (e) {
+    showError('starter-err', e.message);
+    select.innerHTML = '<option value="">Failed to load templates</option>';
+  }
+}
+
+async function showStarterTemplate() {
+  clearError('starter-err');
+  const select = document.getElementById('starter-select');
+  const name = select.value;
+  const desc = document.getElementById('starter-description');
+  const sqlBox = document.getElementById('starter-sql');
+
+  if (!name) {
+    desc.textContent = 'Pick a starter query to preview and run.';
+    sqlBox.value = '';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/query/templates/${encodeURIComponent(name)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      showError('starter-err', data.detail ?? JSON.stringify(data));
+      return;
+    }
+    const category = data.category ? `Category: ${titleizeCategory(data.category)}. ` : '';
+    desc.textContent = `${category}${data.description || ''}`;
+    sqlBox.value = data.sql || '';
+  } catch (e) {
+    showError('starter-err', e.message);
+  }
+}
+
+async function runStarterTemplate() {
+  clearError('starter-err');
+  const select = document.getElementById('starter-select');
+  const name = select.value;
+  if (!name) {
+    showError('starter-err', 'Choose a starter query first.');
+    return;
+  }
+
+  const btn = document.getElementById('starter-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  try {
+    const res = await fetch(`/query/templates/${encodeURIComponent(name)}/run`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError('starter-err', data.detail ?? JSON.stringify(data));
+      return;
+    }
+    renderTable(
+      'starter-results',
+      `${data.rows.length} row(s)`,
+      data.columns,
+      data.rows,
+    );
+  } catch (e) {
+    showError('starter-err', e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Starter Query';
+  }
+}
 
 async function searchVizVertices() {
   clearError('viz-err');
@@ -313,6 +492,17 @@ async function renderVizGraph(vertexId = null) {
       return;
     }
 
+    const seedSelect = document.getElementById('viz-seed');
+    const hasOption = Array.from(seedSelect.options).some(o => o.value === seedId);
+    if (!hasOption && data.vertices && data.vertices.length) {
+      const picked = data.vertices.find(v => v.vertex_id === seedId) || data.vertices[0];
+      const opt = document.createElement('option');
+      opt.value = picked.vertex_id;
+      opt.textContent = `${picked.label}: ${picked.name || picked.vertex_id} (${shortPath(picked.path)}${picked.line ? ':' + picked.line : ''})`;
+      seedSelect.insertBefore(opt, seedSelect.firstChild);
+    }
+    seedSelect.value = seedId;
+
     vizGraphState = data;
     drawVizGraph(data);
     document.getElementById('viz-results').innerHTML = `${data.vertices.length} vertex(es), ${data.edges.length} edge(s), depth ${data.depth}`;
@@ -336,6 +526,8 @@ function drawVizGraph(data) {
 
   if (!vertices.length) {
     svg.innerHTML = '<text x="20" y="32" fill="#94a3b8" font-size="14">No vertices to render.</text>';
+    document.getElementById('viz-center').innerHTML = 'Current center: <span style="color:#64748b">none</span>';
+    setVizDetails(null);
     return;
   }
 
@@ -396,10 +588,41 @@ function drawVizGraph(data) {
     });
   });
 
+  document.getElementById('viz-center').innerHTML = `Current center: <strong>${esc(center.name || center.vertex_id)}</strong> <span style="color:#64748b">(${esc(center.label)})</span>`;
+  setVizDetails(center);
+
   const labels = Array.from(new Set(vertices.map(v => v.label))).sort();
   document.getElementById('viz-legend').innerHTML = labels
     .map(label => `<span class="pill" style="border-color:${nodeColor(label, false)}">${esc(label)}</span>`)
     .join('');
+}
+
+function setVizDetails(vertex) {
+  const panel = document.getElementById('viz-details');
+  if (!vertex) {
+    panel.innerHTML = '<h3>Node Details</h3><p style="color:#64748b;">Render a graph to inspect vertex metadata here.</p>';
+    return;
+  }
+
+  const hasDoc = Boolean(vertex.docstring);
+  const hasSource = Boolean(vertex.source);
+  const docBlock = hasDoc
+    ? `<div class="kv"><span class="k">docstring:</span><details class="src-toggle"><summary>view docstring</summary><pre class="src-block">${esc(vertex.docstring)}</pre></details></div>`
+    : '<div class="kv"><span class="k">docstring:</span><span style="color:#64748b">none</span></div>';
+  const sourceBlock = hasSource
+    ? `<div class="kv"><span class="k">source:</span><details class="src-toggle"><summary>view source</summary><pre class="src-block">${esc(vertex.source)}</pre></details></div>`
+    : '<div class="kv"><span class="k">source:</span><span style="color:#64748b">none</span></div>';
+
+  panel.innerHTML = `
+    <h3>Node Details</h3>
+    <div class="kv"><span class="k">id:</span>${esc(vertex.vertex_id)}</div>
+    <div class="kv"><span class="k">label:</span>${esc(vertex.label)}</div>
+    <div class="kv"><span class="k">name:</span>${esc(vertex.name || '')}</div>
+    <div class="kv"><span class="k">path:</span>${esc(vertex.path || '')}</div>
+    <div class="kv"><span class="k">line:</span>${esc(vertex.line == null ? '' : vertex.line)}</div>
+    ${docBlock}
+    ${sourceBlock}
+  `;
 }
 
 async function runSql() {
@@ -467,6 +690,8 @@ async function runSim() {
     btn.textContent = 'Search';
   }
 }
+
+loadStarterTemplates();
 </script>
 </body>
 </html>

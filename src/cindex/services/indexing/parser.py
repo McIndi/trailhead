@@ -5,9 +5,9 @@ inserts them as vertices/edges into a PropertyGraph.
 
 Vertex labels
 ─────────────
-  module    – one per file; properties: name (stem), path
-  class     – one per class definition; properties: name, path, line
-  function  – one per function/method; properties: name, path, line
+    module    – one per file; properties: name (stem), path, docstring?
+    class     – one per class definition; properties: name, path, line, docstring?
+    function  – one per function/method; properties: name, path, line, docstring?, source
   external  – one per unique imported module name; properties: name
 
 Edge labels
@@ -18,6 +18,7 @@ Edge labels
 """
 from __future__ import annotations
 
+import ast
 import logging
 from pathlib import Path
 
@@ -56,7 +57,12 @@ def parse_python_file(path: Path, graph: PropertyGraph) -> Vertex:
     parser = Parser(language)
     tree = parser.parse(source)
 
-    module_v = graph.add_vertex(LABEL_MODULE, name=path.stem, path=str(path))
+    module_props: dict[str, object] = {"name": path.stem, "path": str(path)}
+    module_docstring = _extract_docstring(tree.root_node, source)
+    if module_docstring is not None:
+        module_props["docstring"] = module_docstring
+
+    module_v = graph.add_vertex(LABEL_MODULE, **module_props)
     _visit_children(tree.root_node, graph, module_v, None, source)
     return module_v
 
@@ -65,6 +71,31 @@ def parse_python_file(path: Path, graph: PropertyGraph) -> Vertex:
 
 def _text(node, source: bytes) -> str:
     return source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+
+def _extract_docstring(node, source: bytes) -> str | None:
+    body = node.child_by_field_name("body")
+    if body is None:
+        body = node
+    if not body.children:
+        return None
+
+    for child in body.children:
+        if child.type in {"comment", "\n"}:
+            continue
+        if child.type != "expression_statement":
+            return None
+
+        text = _text(child, source).strip()
+        if not text:
+            return None
+        try:
+            value = ast.literal_eval(text)
+        except (SyntaxError, ValueError):
+            return None
+        return value if isinstance(value, str) else None
+
+    return None
 
 
 def _visit_children(
@@ -116,12 +147,16 @@ def _handle_class(
     name_node = node.child_by_field_name("name")
     name = _text(name_node, source) if name_node else "<unknown>"
 
-    class_v = graph.add_vertex(
-        LABEL_CLASS,
-        name=name,
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-    )
+    class_props: dict[str, object] = {
+        "name": name,
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+    }
+    class_docstring = _extract_docstring(node, source)
+    if class_docstring is not None:
+        class_props["docstring"] = class_docstring
+
+    class_v = graph.add_vertex(LABEL_CLASS, **class_props)
     graph.add_edge(EDGE_DEFINES, module_v, class_v)
 
     # Walk only the class body so we capture methods without double-visiting.
@@ -146,12 +181,17 @@ def _handle_function(
     name_node = node.child_by_field_name("name")
     name = _text(name_node, source) if name_node else "<unknown>"
 
-    func_v = graph.add_vertex(
-        LABEL_FUNCTION,
-        name=name,
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-    )
+    func_props: dict[str, object] = {
+        "name": name,
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+        "source": _text(node, source),
+    }
+    function_docstring = _extract_docstring(node, source)
+    if function_docstring is not None:
+        func_props["docstring"] = function_docstring
+
+    func_v = graph.add_vertex(LABEL_FUNCTION, **func_props)
     edge_label = EDGE_HAS_METHOD if owner.label == LABEL_CLASS else EDGE_DEFINES
     graph.add_edge(edge_label, owner, func_v)
     # We intentionally do not recurse into the function body in Phase 1.

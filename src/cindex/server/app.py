@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -20,6 +21,8 @@ from cindex.services.indexing import search_vertices
 from cindex.services.indexing import traverse_graph
 from cindex.services.indexing.query import execute_sql_query
 from cindex.services.indexing.query import find_similar_vertices
+from cindex.services.indexing.query_templates import get_query_template
+from cindex.services.indexing.query_templates import list_query_templates
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -151,9 +154,48 @@ def create_app(
     def query_sql(request: SqlRequest) -> dict[str, object]:
         try:
             columns, rows = execute_sql_query(_require_sqlite_db(configured_sqlite_db), request.sql)
-        except (ValueError, RuntimeError, OSError) as exc:
+        except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"columns": columns, "rows": rows}
+
+    @app.get("/query/templates")
+    def query_templates() -> dict[str, object]:
+        templates = list_query_templates()
+        return {"count": len(templates), "templates": templates}
+
+    @app.get("/query/templates/{name}")
+    def query_template(name: str) -> dict[str, str]:
+        try:
+            template = get_query_template(name)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "name": template.name,
+            "category": template.category,
+            "title": template.title,
+            "description": template.description,
+            "sql": template.sql,
+        }
+
+    @app.post("/query/templates/{name}/run")
+    def run_query_template(name: str) -> dict[str, object]:
+        try:
+            template = get_query_template(name)
+            columns, rows = execute_sql_query(_require_sqlite_db(configured_sqlite_db), template.sql)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, OSError, sqlite3.Error) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "template": {
+                "name": template.name,
+                "category": template.category,
+                "title": template.title,
+                "description": template.description,
+            },
+            "columns": columns,
+            "rows": rows,
+        }
 
     @app.post("/query/similar")
     def query_similar(request: SimilarRequest) -> dict[str, object]:

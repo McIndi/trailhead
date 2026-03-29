@@ -84,6 +84,64 @@ class TestServerApp:
         assert body["columns"] == ["id", "name"]
         assert body["rows"] == [{"id": 1, "name": "alpha"}]
 
+    def test_query_templates_endpoint_lists_templates(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "CREATE TABLE edges (id TEXT PRIMARY KEY, label TEXT NOT NULL, out_v_id TEXT NOT NULL, in_v_id TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
+        response = client.get("/query/templates")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] >= 6
+        names = {template["name"] for template in body["templates"]}
+        assert "missing_docstrings" in names
+        assert "symbols_not_represented_by_tests" in names
+        assert all("category" in template for template in body["templates"])
+
+    def test_query_template_run_endpoint_returns_rows(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "CREATE TABLE edges (id TEXT PRIMARY KEY, label TEXT NOT NULL, out_v_id TEXT NOT NULL, in_v_id TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("m1", "module", '{"name": "alpha", "path": "/tmp/a.py"}'),
+            )
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
+        response = client.post("/query/templates/missing_docstrings/run")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["name"] == "missing_docstrings"
+        assert body["template"]["category"] == "quality"
+        assert body["columns"] == [
+            "symbol_kind",
+            "path",
+            "line",
+            "name",
+            "docstring",
+            "source",
+            "vertex_id",
+        ]
+        assert body["rows"][0]["symbol_kind"] == "module"
+        assert body["rows"][0]["name"] == "alpha"
+
     def test_graph_vertices_endpoint_returns_matches(self, tmp_path):
         from cindex.server.app import create_app
 
@@ -234,6 +292,8 @@ class TestServerApp:
         assert 'id="sql-db"' not in response.text
         assert 'id="sim-model"' not in response.text
         assert "Visualize" in response.text
+        assert "Starter Queries" in response.text
+        assert "titleizeCategory" in response.text
 
 
 class TestServeCommand:

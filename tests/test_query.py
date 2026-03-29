@@ -124,7 +124,11 @@ class TestFindSimilarVertices:
             )
             conn.execute(
                 "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
-                ("v1", "function", '{"name": "alpha", "path": "/tmp/a.py", "line": 10}'),
+                (
+                    "v1",
+                    "function",
+                    '{"name": "alpha", "path": "/tmp/a.py", "line": 10, "docstring": "alpha docs", "source": "def alpha():\\n    return 1"}',
+                ),
             )
             conn.execute(
                 "INSERT INTO vertex_embeddings(vertex_id, model_name, source_text, dimension, embedding) VALUES (?, ?, ?, ?, ?)",
@@ -152,6 +156,8 @@ class TestFindSimilarVertices:
         assert len(rows) == 1
         assert rows[0]["label"] == "function"
         assert rows[0]["name"] == "alpha"
+        assert rows[0]["docstring"] == "alpha docs"
+        assert "def alpha()" in rows[0]["source"]
 
 
 class TestQueryCommand:

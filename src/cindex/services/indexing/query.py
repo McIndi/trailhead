@@ -71,6 +71,8 @@ def find_similar_vertices(
           json_extract(v.properties_json, '$.name') AS name,
           json_extract(v.properties_json, '$.path') AS path,
           json_extract(v.properties_json, '$.line') AS line,
+                    json_extract(v.properties_json, '$.docstring') AS docstring,
+                    json_extract(v.properties_json, '$.source') AS source,
           ve.model_name,
           nn.distance
                 FROM vector_full_scan('vertex_embeddings', 'embedding', ?, {k}) AS nn

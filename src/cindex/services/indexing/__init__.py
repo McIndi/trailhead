@@ -4,6 +4,8 @@ from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.graph_query import search_vertices
 from cindex.services.indexing.graph_query import traverse_graph
 from cindex.services.indexing.live_indexer import LiveIndexer
+from cindex.services.indexing.query_templates import get_query_template
+from cindex.services.indexing.query_templates import list_query_templates
 from cindex.services.indexing.sqlite_store import get_indexed_files
 from cindex.services.indexing.sqlite_store import load_graph
 from cindex.services.indexing.sqlite_store import persist_graph
@@ -26,4 +28,6 @@ __all__ = [
     "load_graph",
     "search_vertices",
     "traverse_graph",
+    "list_query_templates",
+    "get_query_template",
 ]

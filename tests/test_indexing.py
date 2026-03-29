@@ -113,6 +113,17 @@ class TestPropertyGraph:
 # ── Parser tests ──────────────────────────────────────────────────────────────
 
 class TestParsePythonFile:
+    def test_parses_module_docstring(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.parser import parse_python_file
+
+        f = tmp_path / "docmod.py"
+        f.write_text('"""module docs"""\n\nimport os\n')
+        graph = PropertyGraph()
+        module_v = parse_python_file(f, graph)
+
+        assert module_v.properties["docstring"] == "module docs"
+
     def test_parses_module_vertex(self, tmp_path):
         from cindex.services.indexing.graph import PropertyGraph
         from cindex.services.indexing.parser import parse_python_file
@@ -138,6 +149,42 @@ class TestParsePythonFile:
         assert len(funcs) == 1
         assert funcs[0].properties["name"] == "greet"
         assert funcs[0].properties["line"] == 1
+
+    def test_function_source_and_docstring_are_captured(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.parser import parse_python_file
+
+        f = tmp_path / "funcs.py"
+        f.write_text(
+            "def greet(name):\n"
+            "    \"\"\"Say hi\"\"\"\n"
+            "    message = f'hi {name}'\n"
+            "    return message\n"
+        )
+        graph = PropertyGraph()
+        parse_python_file(f, graph)
+
+        func = graph.vertices("function")[0]
+        assert func.properties["docstring"] == "Say hi"
+        assert "message = f'hi {name}'" in func.properties["source"]
+
+    def test_method_source_and_docstring_are_captured(self, tmp_path):
+        from cindex.services.indexing.graph import PropertyGraph
+        from cindex.services.indexing.parser import parse_python_file
+
+        f = tmp_path / "animal.py"
+        f.write_text(
+            "class Dog:\n"
+            "    def bark(self):\n"
+            "        \"\"\"Bark loudly\"\"\"\n"
+            "        return 'woof'\n"
+        )
+        graph = PropertyGraph()
+        parse_python_file(f, graph)
+
+        method = graph.vertices("function")[0]
+        assert method.properties["docstring"] == "Bark loudly"
+        assert "return 'woof'" in method.properties["source"]
 
     def test_parses_class(self, tmp_path):
         from cindex.services.indexing.graph import PropertyGraph
