@@ -38,6 +38,31 @@ EDGE_HAS_METHOD = "has_method"
 EDGE_IMPORTS = "imports"
 
 
+def _compute_cyclomatic_complexity(node) -> int:
+    """Compute McCabe (cyclomatic) complexity for a function/method node (tree-sitter node)."""
+    # Complexity starts at 1
+    complexity = 1
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        t = n.type
+        # Branching nodes per McCabe
+        if t in {
+            "if_statement", "elif_clause", "else_clause", "for_statement", "while_statement",
+            "except_clause", "with_statement", "case_clause", "match_statement",
+            "assert_statement", "try_statement", "finally_clause",
+            "comprehension", "conditional_expression"
+        }:
+            complexity += 1
+        # Each except handler
+        if t == "try_statement":
+            for child in n.children:
+                if child.type == "except_clause":
+                    complexity += 1
+        # Recurse into children
+        stack.extend(n.children)
+    return complexity
+
 def parse_python_file(path: Path, graph: PropertyGraph) -> Vertex:
     """Parse *path* and add all discovered entities to *graph*.
 
@@ -122,9 +147,14 @@ def _visit(
     if t == "class_definition":
         _handle_class(node, graph, module_v, source)
 
-    elif t == "function_definition":
+    elif t in ("function_definition", "async_function_definition"):
         owner = class_v if class_v is not None else module_v
         _handle_function(node, graph, module_v, owner, source)
+        # Recursively visit the function body to find nested imports and functions
+        body = node.child_by_field_name("body")
+        if body:
+            for child in body.children:
+                _visit(child, graph, module_v, owner, source)
 
     elif t in ("import_statement", "import_from_statement"):
         _handle_import(node, graph, module_v, source)
@@ -132,7 +162,7 @@ def _visit(
     elif t == "decorated_definition":
         # Walk the decorator's children to find the actual definition.
         for child in node.children:
-            if child.type in ("class_definition", "function_definition"):
+            if child.type in ("class_definition", "function_definition", "async_function_definition"):
                 _visit(child, graph, module_v, class_v, source)
 
     else:
@@ -163,12 +193,21 @@ def _handle_class(
     body = node.child_by_field_name("body")
     if body:
         for child in body.children:
-            if child.type == "function_definition":
+            if child.type in ("function_definition", "async_function_definition"):
                 _handle_function(child, graph, module_v, class_v, source)
+                # Recursively visit the function body for nested imports/functions
+                func_body = child.child_by_field_name("body")
+                if func_body:
+                    for subchild in func_body.children:
+                        _visit(subchild, graph, module_v, class_v, source)
             elif child.type == "decorated_definition":
                 for subchild in child.children:
-                    if subchild.type == "function_definition":
+                    if subchild.type in ("function_definition", "async_function_definition"):
                         _handle_function(subchild, graph, module_v, class_v, source)
+                        func_body = subchild.child_by_field_name("body")
+                        if func_body:
+                            for subsubchild in func_body.children:
+                                _visit(subsubchild, graph, module_v, class_v, source)
 
 
 def _handle_function(
@@ -186,6 +225,7 @@ def _handle_function(
         "path": module_v.properties["path"],
         "line": node.start_point[0] + 1,
         "source": _text(node, source),
+        "complexity": _compute_cyclomatic_complexity(node),
     }
     function_docstring = _extract_docstring(node, source)
     if function_docstring is not None:
@@ -194,7 +234,7 @@ def _handle_function(
     func_v = graph.add_vertex(LABEL_FUNCTION, **func_props)
     edge_label = EDGE_HAS_METHOD if owner.label == LABEL_CLASS else EDGE_DEFINES
     graph.add_edge(edge_label, owner, func_v)
-    # We intentionally do not recurse into the function body in Phase 1.
+    # Function body recursion is now handled in _visit to detect late imports and nested functions.
 
 
 def _handle_import(

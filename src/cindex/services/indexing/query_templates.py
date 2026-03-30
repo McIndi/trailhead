@@ -20,6 +20,35 @@ class QueryTemplate:
 # 2) a test function source string references the symbol name.
 _QUERY_TEMPLATES: tuple[QueryTemplate, ...] = (
     QueryTemplate(
+        name="function_complexity",
+        category="quality",
+        title="Function Complexity",
+        description="List functions and methods with their McCabe (cyclomatic) complexity.",
+        sql="""
+WITH symbols AS (
+  SELECT
+    v.id AS vertex_id,
+    CASE
+      WHEN EXISTS (
+        SELECT 1 FROM edges e
+        WHERE e.label = 'has_method' AND e.in_v_id = v.id
+      ) THEN 'method'
+      ELSE 'function'
+    END AS symbol_kind,
+    json_extract(v.properties_json, '$.name') AS name,
+    json_extract(v.properties_json, '$.path') AS path,
+    json_extract(v.properties_json, '$.line') AS line,
+    json_extract(v.properties_json, '$.complexity') AS complexity,
+    json_extract(v.properties_json, '$.source') AS source
+  FROM vertices v
+  WHERE v.label = 'function'
+)
+SELECT symbol_kind, path, line, name, complexity, source, vertex_id
+FROM symbols
+ORDER BY complexity DESC, path, line, name;
+""".strip(),
+    ),
+    QueryTemplate(
         name="missing_docstrings",
         category="quality",
         title="Missing Docstrings",
