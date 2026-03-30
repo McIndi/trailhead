@@ -7,3 +7,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+db.sqlite
+db.sqlite3
+.cindex/
