@@ -12,9 +12,9 @@ import struct
 from pathlib import Path
 
 from cindex.services.embeddings import generate_embeddings
+from cindex.services.indexing.adapters import parse_file, supported_suffixes
 from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.graph import Vertex
-from cindex.services.indexing.parser import parse_python_file
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -248,7 +248,7 @@ def persist_indexed_files(root: Path, db_path: Path, *, append: bool = False) ->
     files = sorted(
         path.resolve()
         for path in root.rglob("*")
-        if path.is_file() and path.suffix == ".py"
+        if path.is_file() and path.suffix in supported_suffixes()
     )
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,9 +300,9 @@ def reindex_file(
         _delete_vertices_for_path(conn, str(resolved_path))
 
         embedding_candidates: list[tuple[str, str, str]] = []
-        if resolved_path.exists() and resolved_path.is_file() and resolved_path.suffix == ".py":
+        if resolved_path.exists() and resolved_path.is_file() and resolved_path.suffix in supported_suffixes():
             graph = PropertyGraph()
-            parse_python_file(resolved_path, graph)
+            parse_file(resolved_path, graph)
             embedding_candidates = _upsert_graph_slice(conn, graph)
             conn.execute(
                 "INSERT OR REPLACE INTO indexed_files(path, mtime_ns) VALUES (?, ?)",

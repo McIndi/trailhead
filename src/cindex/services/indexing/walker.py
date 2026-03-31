@@ -5,11 +5,9 @@ import logging
 from pathlib import Path
 
 from cindex.services.indexing.graph import PropertyGraph
-from cindex.services.indexing.parser import parse_python_file
+from cindex.services.indexing.adapters import parse_file, supported_suffixes
 
 logger = logging.getLogger(__name__)
-
-SUPPORTED_SUFFIXES: frozenset[str] = frozenset({".py"})
 
 
 def index_directory(root: Path, graph: PropertyGraph | None = None) -> PropertyGraph:
@@ -21,8 +19,9 @@ def index_directory(root: Path, graph: PropertyGraph | None = None) -> PropertyG
     if graph is None:
         graph = PropertyGraph()
 
+    suffixes = supported_suffixes()
     files = sorted(
-        p for p in root.rglob("*") if p.is_file() and p.suffix in SUPPORTED_SUFFIXES
+        p for p in root.rglob("*") if p.is_file() and p.suffix in suffixes
     )
     logger.info("Found %d file(s) to index under %s", len(files), root)
 
@@ -30,7 +29,7 @@ def index_directory(root: Path, graph: PropertyGraph | None = None) -> PropertyG
     for path in files:
         logger.debug("Indexing %s", path)
         try:
-            parse_python_file(path, graph)
+            parse_file(path, graph)
         except Exception:
             logger.warning("Failed to parse %s", path, exc_info=True)
             failed.append(path)

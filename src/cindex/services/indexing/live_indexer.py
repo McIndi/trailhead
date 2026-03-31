@@ -11,6 +11,7 @@ from threading import Thread
 from watchfiles import Change
 from watchfiles import watch
 
+from cindex.services.indexing.adapters import supported_suffixes
 from cindex.services.indexing.sqlite_store import get_indexed_files
 from cindex.services.indexing.sqlite_store import persist_graph
 from cindex.services.indexing.sqlite_store import persist_indexed_files
@@ -88,11 +89,11 @@ class LiveIndexer:
         current_files = {
             str(path.resolve()): path.stat().st_mtime_ns
             for path in self.root.rglob("*")
-            if path.is_file() and path.suffix == ".py"
+            if path.is_file() and path.suffix in supported_suffixes()
         }
         indexed_files = get_indexed_files(self.db_path)
         logger.info(
-            "Synchronizing index: %d current .py files, %d previously indexed",
+            "Synchronizing index: %d current source files, %d previously indexed",
             len(current_files),
             len(indexed_files),
         )
@@ -140,7 +141,7 @@ class LiveIndexer:
         logger.info("Full index build complete")
 
     def reindex_paths(self, paths: set[Path]) -> None:
-        py_paths = sorted(p.resolve() for p in paths if p.suffix == ".py")
+        py_paths = sorted(p.resolve() for p in paths if p.suffix in supported_suffixes())
         if not py_paths:
             return
         for path in py_paths:
@@ -192,4 +193,6 @@ class LiveIndexer:
 
 def _include_watch_change(change: Change, path: str) -> bool:
     file_path = Path(path)
-    return file_path.suffix == ".py" or (change == Change.deleted and file_path.suffix == ".py")
+    return file_path.suffix in supported_suffixes() or (
+        change == Change.deleted and file_path.suffix in supported_suffixes()
+    )

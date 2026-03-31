@@ -419,20 +419,20 @@ class TestIndexDirectory:
         bad.write_text("def ok(): pass\n")
 
         with caplog.at_level(logging.WARNING):
-            # Patch parse_python_file to raise on bad.py
+            # Patch parse_file to raise on bad.py
             import cindex.services.indexing.walker as walker_mod
-            original = walker_mod.parse_python_file
+            original = walker_mod.parse_file
 
             def patched(path, graph):
                 if path == bad:
                     raise RuntimeError("simulated parse error")
                 return original(path, graph)
 
-            walker_mod.parse_python_file = patched
+            walker_mod.parse_file = patched
             try:
                 graph = index_directory(tmp_path)
             finally:
-                walker_mod.parse_python_file = original
+                walker_mod.parse_file = original
 
         # Good file was indexed despite the failure
         assert len(graph.vertices("function")) == 1

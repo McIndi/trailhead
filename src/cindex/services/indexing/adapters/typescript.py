@@ -1,0 +1,232 @@
+"""Tree-sitter based TypeScript/TSX source file adapter.
+
+TypeScript is a superset of JavaScript; this adapter handles all JS constructs
+plus TypeScript-specific ones (interfaces, enums, abstract classes, type aliases).
+
+Vertex labels produced
+──────────────────────
+    module    – one per file
+    class     – class / interface / enum / abstract class declarations
+    function  – functions, methods, method signatures
+    external  – imported module specifiers
+
+Edge labels produced
+────────────────────
+    defines    – module → class / module → function
+    has_method – class → function
+    imports    – module → external
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from cindex.services.indexing.graph import PropertyGraph, Vertex
+from cindex.services.indexing.adapters.base import (
+    LanguageAdapter,
+    _add_external,
+    _complexity,
+    _node_text,
+)
+
+logger = logging.getLogger(__name__)
+
+_BRANCHING = frozenset({
+    "if_statement", "else_clause", "for_statement", "for_in_statement",
+    "for_of_statement", "while_statement", "do_statement",
+    "switch_case", "catch_clause", "ternary_expression",
+})
+
+_FUNC_DECL_TYPES = frozenset({
+    "function_declaration", "generator_function_declaration",
+})
+
+_FUNC_VAL_TYPES = frozenset({
+    "arrow_function", "function_expression", "generator_function",
+})
+
+# TS-specific node types that map to "class" vertices
+_CLASS_LIKE_TYPES = frozenset({
+    "class_declaration",
+    "abstract_class_declaration",
+    "interface_declaration",
+    "enum_declaration",
+})
+
+# Method-like node types inside class/interface bodies
+_METHOD_LIKE_TYPES = frozenset({
+    "method_definition",
+    "method_signature",
+    "abstract_method_signature",
+})
+
+
+class TypeScriptAdapter(LanguageAdapter):
+    """Language adapter for TypeScript (.ts) files."""
+
+    extensions = frozenset({".ts"})
+
+    @classmethod
+    def is_available(cls) -> bool:
+        try:
+            import tree_sitter_typescript  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def parse(self, path: Path, graph: PropertyGraph) -> Vertex:
+        try:
+            import tree_sitter_typescript as tsts
+            from tree_sitter import Language, Parser
+        except ImportError as exc:
+            raise ImportError(
+                "tree-sitter-typescript is required. "
+                "Install it with: pip install tree-sitter-typescript"
+            ) from exc
+
+        source = path.read_bytes()
+        language = Language(tsts.language_typescript())
+        parser = Parser(language)
+        tree = parser.parse(source)
+
+        module_v = graph.add_vertex("module", name=path.stem, path=str(path))
+        _visit(tree.root_node, graph, module_v, None, source)
+        return module_v
+
+
+class TSXAdapter(LanguageAdapter):
+    """Language adapter for TypeScript JSX (.tsx) files."""
+
+    extensions = frozenset({".tsx"})
+
+    @classmethod
+    def is_available(cls) -> bool:
+        try:
+            import tree_sitter_typescript  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def parse(self, path: Path, graph: PropertyGraph) -> Vertex:
+        try:
+            import tree_sitter_typescript as tsts
+            from tree_sitter import Language, Parser
+        except ImportError as exc:
+            raise ImportError(
+                "tree-sitter-typescript is required. "
+                "Install it with: pip install tree-sitter-typescript"
+            ) from exc
+
+        source = path.read_bytes()
+        language = Language(tsts.language_tsx())
+        parser = Parser(language)
+        tree = parser.parse(source)
+
+        module_v = graph.add_vertex("module", name=path.stem, path=str(path))
+        _visit(tree.root_node, graph, module_v, None, source)
+        return module_v
+
+
+# ── AST visitors ──────────────────────────────────────────────────────────────
+
+def _visit(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
+    t = node.type
+
+    if t in _CLASS_LIKE_TYPES:
+        _handle_class(node, graph, module_v, src)
+
+    elif t in _FUNC_DECL_TYPES:
+        _handle_func_decl(node, graph, module_v, class_v, src)
+
+    elif t in ("lexical_declaration", "variable_declaration"):
+        for child in node.children:
+            if child.type == "variable_declarator":
+                _handle_var_declarator(child, graph, module_v, class_v, src)
+
+    elif t == "export_statement":
+        decl = node.child_by_field_name("declaration")
+        if decl is not None:
+            _visit(decl, graph, module_v, class_v, src)
+
+    elif t == "import_statement":
+        _handle_import(node, graph, module_v, src)
+
+    elif t == "ambient_declaration":
+        # declare module/namespace/function/class (in .d.ts files)
+        for child in node.children:
+            _visit(child, graph, module_v, class_v, src)
+
+    else:
+        for child in node.children:
+            _visit(child, graph, module_v, class_v, src)
+
+
+def _handle_func_decl(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return
+    owner = class_v if class_v is not None else module_v
+    _add_function(node, _node_text(name_node, src), owner, module_v, graph, src)
+
+
+def _handle_var_declarator(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
+    name_node = node.child_by_field_name("name")
+    value_node = node.child_by_field_name("value")
+    if name_node is None or value_node is None:
+        return
+    if value_node.type not in _FUNC_VAL_TYPES:
+        return
+    owner = class_v if class_v is not None else module_v
+    _add_function(value_node, _node_text(name_node, src), owner, module_v, graph, src)
+
+
+def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+    name_node = node.child_by_field_name("name")
+    name = _node_text(name_node, src) if name_node else "<anonymous>"
+    class_v = graph.add_vertex(
+        "class",
+        name=name,
+        path=module_v.properties["path"],
+        line=node.start_point[0] + 1,
+    )
+    graph.add_edge("defines", module_v, class_v)
+
+    # class_body / interface_body / enum_body
+    body = node.child_by_field_name("body")
+    if body is None:
+        return
+    for child in body.children:
+        if child.type in _METHOD_LIKE_TYPES:
+            _handle_method(child, graph, module_v, class_v, src)
+        elif child.type in ("lexical_declaration", "variable_declaration"):
+            for sub in child.children:
+                if sub.type == "variable_declarator":
+                    _handle_var_declarator(sub, graph, module_v, class_v, src)
+
+
+def _handle_method(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex, src: bytes) -> None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return
+    _add_function(node, _node_text(name_node, src), class_v, module_v, graph, src)
+
+
+def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: PropertyGraph, src: bytes) -> None:
+    func_v = graph.add_vertex(
+        "function",
+        name=name,
+        path=module_v.properties["path"],
+        line=node.start_point[0] + 1,
+        source=_node_text(node, src),
+        complexity=_complexity(node, _BRANCHING),
+    )
+    graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
+
+
+def _handle_import(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+    source_node = node.child_by_field_name("source")
+    if source_node is None:
+        return
+    name = _node_text(source_node, src).strip("'\"` \t")
+    if name:
+        _add_external(name, module_v, graph)
