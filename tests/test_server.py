@@ -325,6 +325,7 @@ class TestServeCommand:
                     "cache_dir": None,
                     "sqlite_db": "data.db",
                     "no_preload": False,
+                    "allow_any_model": True,
                 },
             )()
         )

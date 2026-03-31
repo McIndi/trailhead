@@ -6,7 +6,9 @@ import json
 import logging
 from pathlib import Path
 
+from cindex.services.config import ALLOWED_MODELS
 from cindex.services.config import get_cache_dir
+from cindex.services.config import is_model_allowed
 from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.sqlite_store import get_index_model
 from cindex.services.indexing.sqlite_store import persist_graph
@@ -71,6 +73,14 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
             "Defaults to CINDEX_CACHE_DIR if set, otherwise Hugging Face default."
         ),
     )
+    parser.add_argument(
+        "--allow-any-model",
+        action="store_true",
+        help=(
+            "Allow any Hugging Face model ID for --embed-model, bypassing the built-in "
+            "allowlist. Can also be set via the CINDEX_ALLOW_ANY_MODEL environment variable."
+        ),
+    )
     parser.set_defaults(func=run)
 
 
@@ -82,6 +92,15 @@ def run(args: argparse.Namespace) -> int:
         return 1
     if not root.is_dir():
         logger.error("Not a directory: %s", root)
+        return 1
+
+    if args.embed_model and not is_model_allowed(args.embed_model, allow_any=args.allow_any_model):
+        logger.error(
+            "Model '%s' is not in the allowlist. Allowed models: %s. "
+            "Pass --allow-any-model or set CINDEX_ALLOW_ANY_MODEL=1 to use a custom model.",
+            args.embed_model,
+            ", ".join(sorted(ALLOWED_MODELS)),
+        )
         return 1
 
     if args.embed_model and not args.sqlite_db:

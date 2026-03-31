@@ -6,7 +6,9 @@ import argparse
 import logging
 from pathlib import Path
 
+from cindex.services.config import ALLOWED_MODELS
 from cindex.services.config import get_cache_dir
+from cindex.services.config import is_model_allowed
 from cindex.services.indexing.sqlite_store import get_index_model
 
 logger = logging.getLogger(__name__)
@@ -51,11 +53,28 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Start the server without warming the default model during startup.",
     )
+    parser.add_argument(
+        "--allow-any-model",
+        action="store_true",
+        help=(
+            "Allow any Hugging Face model ID for --model, bypassing the built-in "
+            "allowlist. Can also be set via the CINDEX_ALLOW_ANY_MODEL environment variable."
+        ),
+    )
     parser.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> int:
     import uvicorn
+
+    if not is_model_allowed(args.model, allow_any=args.allow_any_model):
+        logger.error(
+            "Model '%s' is not in the allowlist. Allowed models: %s. "
+            "Pass --allow-any-model or set CINDEX_ALLOW_ANY_MODEL=1 to use a custom model.",
+            args.model,
+            ", ".join(sorted(ALLOWED_MODELS)),
+        )
+        return 1
 
     cache_dir = args.cache_dir or get_cache_dir()
     if cache_dir:
