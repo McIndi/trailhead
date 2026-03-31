@@ -29,20 +29,14 @@ DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 class EmbedRequest(BaseModel):
     text: str
-    model: str = DEFAULT_MODEL
-    cache_dir: str | None = None
 
 
 class BatchEmbedRequest(BaseModel):
     texts: list[str] = Field(min_length=1)
-    model: str = DEFAULT_MODEL
-    cache_dir: str | None = None
 
 
 class SimilarRequest(BaseModel):
     text: str
-    model: str | None = None
-    cache_dir: str | None = None
     k: int = Field(default=10, ge=1)
     label: str | None = None
 
@@ -146,11 +140,11 @@ def create_app(
         """
         embedding = generate_embedding(
             request.text,
-            request.model,
-            cache_folder=request.cache_dir,
+            default_model,
+            cache_folder=cache_dir,
         )
         return {
-            "model": request.model,
+            "model": default_model,
             "dimensions": len(embedding),
             "embedding": embedding,
         }
@@ -171,11 +165,11 @@ def create_app(
         """
         embeddings = generate_embeddings(
             request.texts,
-            request.model,
-            cache_folder=request.cache_dir,
+            default_model,
+            cache_folder=cache_dir,
         )
         return {
-            "model": request.model,
+            "model": default_model,
             "count": len(embeddings),
             "dimensions": len(embeddings[0]) if embeddings else 0,
             "embeddings": embeddings,
@@ -265,8 +259,6 @@ def create_app(
     @app.get("/api/query/similar")
     def query_similar(
         text: str,
-        model: str = DEFAULT_MODEL,
-        cache_dir: str = None,
         k: int = 10,
         label: str = None
     ) -> dict[str, object]:
@@ -275,8 +267,6 @@ def create_app(
 
         Args (as query parameters):
             text (str): Query text to search for similar code symbols.
-            model (str, optional): Embedding model to use. Default is the configured model.
-            cache_dir (str, optional): Optional cache directory for model files.
             k (int, optional): Number of top results to return. Default is 10.
             label (str, optional): Filter by symbol label (e.g., function, class).
 
@@ -287,7 +277,7 @@ def create_app(
             rows = find_similar_vertices(
                 _require_sqlite_db(configured_sqlite_db),
                 text,
-                model_name=model or default_model,
+                model_name=default_model,
                 cache_folder=cache_dir,
                 k=k,
                 label=label,

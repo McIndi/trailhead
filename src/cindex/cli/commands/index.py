@@ -8,6 +8,7 @@ from pathlib import Path
 
 from cindex.services.config import get_cache_dir
 from cindex.services.indexing.graph import PropertyGraph
+from cindex.services.indexing.sqlite_store import get_index_model
 from cindex.services.indexing.sqlite_store import persist_graph
 from cindex.services.indexing.sqlite_store import persist_indexed_files
 from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
@@ -86,6 +87,20 @@ def run(args: argparse.Namespace) -> int:
     if args.embed_model and not args.sqlite_db:
         logger.error("--embed-model requires --sqlite-db so vectors can be persisted.")
         return 1
+
+    if args.embed_model and args.sqlite_db:
+        db_path_check = Path(args.sqlite_db).resolve()
+        existing_model = get_index_model(db_path_check)
+        if existing_model is not None and existing_model != args.embed_model:
+            print(
+                f"Warning: the existing index was built with model '{existing_model}', "
+                f"but you are indexing with '{args.embed_model}'. "
+                f"This will replace all existing embeddings."
+            )
+            response = input("Regenerate all embeddings? [y/N] ").strip().lower()
+            if response != "y":
+                logger.info("Aborted.")
+                return 0
 
     logger.info("Indexing %s", root)
     graph = index_directory(root)

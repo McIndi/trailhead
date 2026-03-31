@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from cindex.services.config import get_cache_dir
+from cindex.services.indexing.sqlite_store import get_index_model
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,21 @@ def run(args: argparse.Namespace) -> int:
         cache_dir = str(Path(cache_dir).resolve())
 
     watch_directory = str(Path(args.directory).resolve())
+
+    db_path = Path(args.sqlite_db).resolve()
+    existing_model = get_index_model(db_path)
+    if existing_model is not None and existing_model != args.model:
+        logger.error(
+            "Model mismatch: server is configured with '%s' but the index was built with '%s'. "
+            "Re-run 'cindex index --embed-model %s --sqlite-db %s' to regenerate embeddings, "
+            "or pass '--model %s' to match the existing index.",
+            args.model,
+            existing_model,
+            args.model,
+            args.sqlite_db,
+            existing_model,
+        )
+        return 1
 
     logger.info(
         "Starting cindex API server on %s:%d with model %s watching %s",

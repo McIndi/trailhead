@@ -17,6 +17,11 @@ from cindex.services.indexing.graph import Vertex
 from cindex.services.indexing.parser import parse_python_file
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS vertices (
   id TEXT PRIMARY KEY,
   label TEXT NOT NULL,
@@ -55,9 +60,30 @@ CREATE INDEX IF NOT EXISTS idx_vertex_embeddings_model ON vertex_embeddings(mode
 CREATE INDEX IF NOT EXISTS idx_indexed_files_mtime ON indexed_files(mtime_ns);
 """
 
+_META_EMBEDDING_MODEL = "embedding_model"
+
 SUPPORTED_VECTOR_VERTEX_LABELS: frozenset[str] = frozenset(
     {"module", "class", "function", "external"}
 )
+
+
+def get_index_model(db_path: Path) -> str | None:
+    """Return the embedding model name recorded in the index, or None if not set."""
+    if not db_path.exists():
+        return None
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(SCHEMA_SQL)
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = ?", (_META_EMBEDDING_MODEL,)
+        ).fetchone()
+    return str(row[0]) if row else None
+
+
+def _set_index_model(conn: sqlite3.Connection, model_name: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+        (_META_EMBEDDING_MODEL, model_name),
+    )
 
 
 def persist_graph(
@@ -165,6 +191,8 @@ def persist_vertex_embeddings(
                 for index in range(len(vertices))
             ],
         )
+
+        _set_index_model(conn, model_name)
 
         extension_ready = False
         if initialize_vector_extension and dimension > 0:
@@ -434,6 +462,8 @@ def _persist_embedding_candidates(
             for index in range(len(supported_candidates))
         ],
     )
+
+    _set_index_model(conn, model_name)
 
     if initialize_vector_extension and embeddings:
         _try_initialize_sqlite_vector(conn, len(embeddings[0]))
