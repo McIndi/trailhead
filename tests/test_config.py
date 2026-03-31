@@ -68,6 +68,8 @@ class TestServeCommandModelValidation:
                     "sqlite_db": "data.db",
                     "no_preload": False,
                     "allow_any_model": False,
+                    "cors_origins": None,
+                    "rate_limit": 0,
                 },
             )()
         )
@@ -94,6 +96,8 @@ class TestServeCommandModelValidation:
                     "sqlite_db": str(tmp_path / "data.db"),
                     "no_preload": False,
                     "allow_any_model": True,
+                    "cors_origins": None,
+                    "rate_limit": 0,
                 },
             )()
         )
@@ -120,6 +124,8 @@ class TestServeCommandModelValidation:
                     "sqlite_db": str(tmp_path / "data.db"),
                     "no_preload": False,
                     "allow_any_model": False,
+                    "cors_origins": None,
+                    "rate_limit": 0,
                 },
             )()
         )

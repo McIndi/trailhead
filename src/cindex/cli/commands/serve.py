@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
 from cindex.services.config import ALLOWED_MODELS
@@ -61,6 +62,23 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
             "allowlist. Can also be set via the CINDEX_ALLOW_ANY_MODEL environment variable."
         ),
     )
+    parser.add_argument(
+        "--cors-origins",
+        default=None,
+        metavar="ORIGINS",
+        help=(
+            "Comma-separated list of allowed CORS origins "
+            "(e.g. http://localhost:3000,http://127.0.0.1:5173). "
+            "Can also be set via CINDEX_CORS_ORIGINS. Unset disables CORS."
+        ),
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=int,
+        default=120,
+        metavar="N",
+        help="Max API requests per minute per IP (default: 120, 0 to disable).",
+    )
     parser.set_defaults(func=run)
 
 
@@ -110,6 +128,9 @@ def run(args: argparse.Namespace) -> int:
         format="%(levelname)-8s %(name)s — %(message)s",
     )
 
+    cors_origins_raw = args.cors_origins or os.environ.get("CINDEX_CORS_ORIGINS", "")
+    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+
     from cindex.server.app import create_app
 
     app = create_app(
@@ -119,6 +140,8 @@ def run(args: argparse.Namespace) -> int:
         watch_directory=watch_directory,
         preload_default_model=not args.no_preload,
         run_indexer=True,
+        cors_origins=cors_origins,
+        rate_limit=args.rate_limit,
     )
 
     uvicorn.run(app, host=args.host, port=args.port)

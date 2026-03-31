@@ -20,6 +20,12 @@ def search_vertices(
     """Find vertices by simple property filters."""
     if limit < 1:
         raise ValueError("limit must be at least 1")
+    if name and len(name) > 200:
+        raise ValueError("name filter must be 200 characters or fewer")
+    if label and len(label) > 100:
+        raise ValueError("label filter must be 100 characters or fewer")
+    if path_contains and len(path_contains) > 500:
+        raise ValueError("path filter must be 500 characters or fewer")
 
     clauses = ["1 = 1"]
     params: list[Any] = []

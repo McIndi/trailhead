@@ -33,6 +33,101 @@ class TestModelStore:
         assert created == [("model-a", "/tmp/cache")]
 
 
+class TestRateLimit:
+    def test_requests_within_limit_succeed(self):
+        from cindex.server.app import create_app
+
+        client = TestClient(create_app(preload_default_model=False, rate_limit=5))
+        for _ in range(5):
+            assert client.get("/api/health").status_code == 200
+
+    def test_requests_over_limit_receive_429(self):
+        from cindex.server.app import create_app
+
+        client = TestClient(create_app(preload_default_model=False, rate_limit=3))
+        responses = [client.get("/api/health").status_code for _ in range(5)]
+        assert responses[:3] == [200, 200, 200]
+        assert 429 in responses[3:]
+
+    def test_rate_limit_zero_disables_limiting(self):
+        from cindex.server.app import create_app
+
+        client = TestClient(create_app(preload_default_model=False, rate_limit=0))
+        for _ in range(10):
+            assert client.get("/api/health").status_code == 200
+
+
+class TestCors:
+    def test_cors_headers_absent_without_configuration(self):
+        from cindex.server.app import create_app
+
+        client = TestClient(create_app(preload_default_model=False))
+        response = client.get("/api/health", headers={"Origin": "http://evil.example.com"})
+        assert "access-control-allow-origin" not in response.headers
+
+    def test_cors_headers_present_for_allowed_origin(self):
+        from cindex.server.app import create_app
+
+        client = TestClient(
+            create_app(
+                preload_default_model=False,
+                cors_origins=["http://localhost:3000"],
+            )
+        )
+        response = client.get("/api/health", headers={"Origin": "http://localhost:3000"})
+        assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    def test_cors_headers_absent_for_unlisted_origin(self):
+        from cindex.server.app import create_app
+
+        client = TestClient(
+            create_app(
+                preload_default_model=False,
+                cors_origins=["http://localhost:3000"],
+            )
+        )
+        response = client.get("/api/health", headers={"Origin": "http://evil.example.com"})
+        assert response.headers.get("access-control-allow-origin") != "http://evil.example.com"
+
+
+class TestInputValidation:
+    def test_graph_vertices_rejects_oversized_name_filter(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False, rate_limit=0))
+        response = client.get("/api/graph/vertices", params={"name": "a" * 201})
+        assert response.status_code == 422
+
+    def test_graph_vertices_accepts_name_at_max_length(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False, rate_limit=0))
+        response = client.get("/api/graph/vertices", params={"name": "a" * 200})
+        assert response.status_code == 200
+
+    def test_sql_endpoint_rejects_oversized_query(self, tmp_path):
+        from cindex.server.app import create_app
+
+        db = tmp_path / "api.db"
+        db.touch()
+
+        client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False, rate_limit=0))
+        response = client.post("/api/query/sql", json={"sql": "SELECT 1" + " " * 10_000})
+        assert response.status_code == 422
+
+
 class TestServerApp:
     def test_health_endpoint_reports_status(self):
         from cindex.server.app import create_app
@@ -296,7 +391,7 @@ class TestServeCommand:
         captured: dict[str, object] = {}
         sentinel_app = object()
 
-        def fake_create_app(*, default_model, cache_dir, sqlite_db, watch_directory, preload_default_model, run_indexer):
+        def fake_create_app(*, default_model, cache_dir, sqlite_db, watch_directory, preload_default_model, run_indexer, cors_origins, rate_limit):
             captured["default_model"] = default_model
             captured["cache_dir"] = cache_dir
             captured["sqlite_db"] = sqlite_db
@@ -326,6 +421,8 @@ class TestServeCommand:
                     "sqlite_db": "data.db",
                     "no_preload": False,
                     "allow_any_model": True,
+                    "cors_origins": None,
+                    "rate_limit": 120,
                 },
             )()
         )

@@ -9,9 +9,13 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from pydantic import Field
+
+from cindex.server.rate_limit import RateLimitMiddleware
 
 from cindex.services.embeddings import generate_embedding
 from cindex.services.embeddings import generate_embeddings
@@ -28,36 +32,15 @@ DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class EmbedRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=10_000)
 
 
 class BatchEmbedRequest(BaseModel):
-    texts: list[str] = Field(min_length=1)
-
-
-class SimilarRequest(BaseModel):
-    text: str
-    k: int = Field(default=10, ge=1)
-    label: str | None = None
+    texts: list[str] = Field(min_length=1, max_length=100)
 
 
 class SqlRequest(BaseModel):
-    sql: str
-
-
-class GraphSearchRequest(BaseModel):
-    name: str | None = None
-    label: str | None = None
-    path_contains: str | None = None
-    limit: int = Field(default=20, ge=1, le=200)
-
-
-class GraphTraverseRequest(BaseModel):
-    vertex_id: str
-    direction: str = Field(default="both")
-    depth: int = Field(default=1, ge=1, le=5)
-    edge_labels: list[str] | None = None
-    max_vertices: int = Field(default=100, ge=1, le=500)
+    sql: str = Field(max_length=10_000)
 
 
 def create_app(
@@ -68,6 +51,8 @@ def create_app(
     watch_directory: str | None = None,
     preload_default_model: bool = True,
     run_indexer: bool = False,
+    cors_origins: list[str] | None = None,
+    rate_limit: int = 120,
 ) -> FastAPI:
     configured_sqlite_db = str(Path(sqlite_db).resolve()) if sqlite_db else None
     configured_watch_directory = str(Path(watch_directory).resolve()) if watch_directory else None
@@ -105,6 +90,17 @@ def create_app(
         description="Warm-model API for embeddings and SQLite-backed code queries.",
         lifespan=lifespan,
     )
+
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+        )
+
+    if rate_limit > 0:
+        app.add_middleware(RateLimitMiddleware, requests_per_minute=rate_limit)
 
     @app.get("/api/health")
     def health() -> dict[str, object]:
@@ -258,9 +254,9 @@ def create_app(
 
     @app.get("/api/query/similar")
     def query_similar(
-        text: str,
-        k: int = 10,
-        label: str = None
+        text: str = Query(max_length=2_000),
+        k: int = Query(default=10, ge=1, le=100),
+        label: str = Query(default=None, max_length=100),
     ) -> dict[str, object]:
         """
         Perform a semantic similarity search for code symbols.
@@ -290,10 +286,10 @@ def create_app(
 
     @app.get("/api/graph/vertices")
     def graph_vertices_get(
-        name: str = None,
-        label: str = None,
-        path_contains: str = None,
-        limit: int = 20
+        name: str = Query(default=None, max_length=200),
+        label: str = Query(default=None, max_length=100),
+        path_contains: str = Query(default=None, max_length=500),
+        limit: int = Query(default=20, ge=1, le=200),
     ) -> dict[str, object]:
         """
         Search for code vertices (modules, classes, functions, etc.) in the code index.
@@ -323,11 +319,11 @@ def create_app(
 
     @app.get("/api/graph/traverse")
     def graph_traverse_get(
-        vertex_id: str,
-        direction: str = "both",
-        depth: int = 1,
-        edge_labels: str = None,
-        max_vertices: int = 100
+        vertex_id: str = Query(max_length=200),
+        direction: str = Query(default="both", max_length=10),
+        depth: int = Query(default=1, ge=1, le=5),
+        edge_labels: str = Query(default=None, max_length=500),
+        max_vertices: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, object]:
         """
         Traverse the code property graph from a given vertex.
