@@ -39,7 +39,7 @@ class TestServerApp:
 
         configured_db = str((Path("/tmp/test.db")).resolve())
         client = TestClient(create_app(sqlite_db="/tmp/test.db", preload_default_model=False))
-        response = client.get("/health")
+        response = client.get("/api/health")
 
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
@@ -56,8 +56,8 @@ class TestServerApp:
 
         client = TestClient(create_app(preload_default_model=False))
         response = client.post(
-            "/embed",
-            json={"text": "hello", "model": "model-a"},
+            "/api/embed",
+            json={"text": "hello"},
         )
 
         assert response.status_code == 200
@@ -75,7 +75,7 @@ class TestServerApp:
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
         response = client.post(
-            "/query/sql",
+            "/api/query/sql",
             json={"sql": "SELECT id, name FROM items"},
         )
 
@@ -97,7 +97,7 @@ class TestServerApp:
             )
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
-        response = client.get("/query/templates")
+        response = client.get("/api/query/templates")
 
         assert response.status_code == 200
         body = response.json()
@@ -124,7 +124,7 @@ class TestServerApp:
             )
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
-        response = client.post("/query/templates/missing_docstrings/run")
+        response = client.post("/api/query/templates/missing_docstrings/run")
 
         assert response.status_code == 200
         body = response.json()
@@ -156,9 +156,9 @@ class TestServerApp:
             )
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
-        response = client.post(
-            "/graph/vertices",
-            json={"name": "alp", "label": "function"},
+        response = client.get(
+            "/api/graph/vertices",
+            params={"name": "alp", "label": "function"},
         )
 
         assert response.status_code == 200
@@ -190,9 +190,9 @@ class TestServerApp:
             )
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
-        response = client.post(
-            "/graph/traverse",
-            json={"vertex_id": "m1", "direction": "out", "depth": 1},
+        response = client.get(
+            "/api/graph/traverse",
+            params={"vertex_id": "m1", "direction": "out", "depth": 1},
         )
 
         assert response.status_code == 200
@@ -230,12 +230,9 @@ class TestServerApp:
         )
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
-        response = client.post(
-            "/query/similar",
-            json={
-                "text": "find alpha",
-                "k": 5,
-            },
+        response = client.get(
+            "/api/query/similar",
+            params={"text": "find alpha", "k": 5},
         )
 
         assert response.status_code == 200
@@ -267,13 +264,9 @@ class TestServerApp:
         )
 
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
-        response = client.post(
-            "/query/similar",
-            json={
-                "text": "find alpha",
-                "model": ".cindex/db.sqlite",
-                "k": 5,
-            },
+        response = client.get(
+            "/api/query/similar",
+            params={"text": "find alpha", "k": 5},
         )
 
         assert response.status_code == 400

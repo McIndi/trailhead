@@ -332,8 +332,8 @@ class TestParsePythonFile:
         assert len(method_edges) == 1
         assert method_edges[0].in_v.properties["name"] == "helper"
 
-    def test_nested_function_not_captured(self, tmp_path):
-        """Functions defined inside other functions are not indexed in Phase 1."""
+    def test_nested_function_are_captured(self, tmp_path):
+        """Functions defined inside other functions are indexed."""
         from cindex.services.indexing.graph import PropertyGraph
         from cindex.services.indexing.parser import parse_python_file
 
@@ -348,7 +348,7 @@ class TestParsePythonFile:
 
         func_names = {v.properties["name"] for v in graph.vertices("function")}
         assert "outer" in func_names
-        assert "inner" not in func_names
+        assert "inner" in func_names
 
 
 # ── Walker tests ──────────────────────────────────────────────────────────────
