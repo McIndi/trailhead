@@ -58,6 +58,65 @@ class TestReindexFile:
         assert indexed_files == 0
 
 
+class TestLiveIndexerThreading:
+    def test_start_launches_separate_watcher_and_worker_threads(self, tmp_path, monkeypatch):
+        from cindex.services.indexing.live_indexer import LiveIndexer
+
+        root = tmp_path / "src"
+        root.mkdir()
+        db = tmp_path / "graph.db"
+
+        # Prevent real file watching from running
+        monkeypatch.setattr(
+            "cindex.services.indexing.live_indexer.watch",
+            lambda *a, **kw: iter([]),
+        )
+
+        service = LiveIndexer(root=root, db_path=db)
+        service.start()
+
+        try:
+            assert service._watch_thread is not None
+            assert service._worker_thread is not None
+            assert service._watch_thread is not service._worker_thread
+            assert service._watch_thread.name == "cindex-indexer-watcher"
+            assert service._worker_thread.name == "cindex-indexer-worker"
+        finally:
+            service.stop()
+
+    def test_watcher_enqueues_changes_for_worker(self, tmp_path, monkeypatch):
+        from cindex.services.indexing.live_indexer import LiveIndexer
+
+        root = tmp_path / "src"
+        root.mkdir()
+        db = tmp_path / "graph.db"
+
+        reindexed: list[set] = []
+
+        def fake_reindex_paths(paths):
+            reindexed.append(paths)
+
+        # Simulate the watcher detecting one change then stopping
+        changed_path = str(root / "foo.py")
+        fake_changes = [[(1, changed_path)]]  # Change.added = 1
+
+        monkeypatch.setattr(
+            "cindex.services.indexing.live_indexer.watch",
+            lambda *a, **kw: iter(fake_changes),
+        )
+
+        service = LiveIndexer(root=root, db_path=db)
+        monkeypatch.setattr(service, "reindex_paths", fake_reindex_paths)
+        service.start()
+
+        # Allow worker time to drain the queue
+        service._change_queue.join()
+        service.stop()
+
+        assert len(reindexed) == 1
+        assert any(p.name == "foo.py" for p in reindexed[0])
+
+
 class TestLiveIndexer:
     def test_synchronize_reindexes_changed_new_and_deleted_files(self, tmp_path, monkeypatch):
         from cindex.services.indexing.live_indexer import LiveIndexer

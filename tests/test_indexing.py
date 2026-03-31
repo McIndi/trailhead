@@ -409,6 +409,36 @@ class TestIndexDirectory:
         assert len(graph.vertices("module")) == 2
         assert len(graph.vertices("class")) == 2
 
+    def test_parse_failure_logs_summary_and_continues(self, tmp_path, caplog):
+        import logging
+        from cindex.services.indexing.walker import index_directory
+
+        good = tmp_path / "good.py"
+        bad = tmp_path / "bad.py"
+        good.write_text("def ok(): pass\n")
+        bad.write_text("def ok(): pass\n")
+
+        with caplog.at_level(logging.WARNING):
+            # Patch parse_python_file to raise on bad.py
+            import cindex.services.indexing.walker as walker_mod
+            original = walker_mod.parse_python_file
+
+            def patched(path, graph):
+                if path == bad:
+                    raise RuntimeError("simulated parse error")
+                return original(path, graph)
+
+            walker_mod.parse_python_file = patched
+            try:
+                graph = index_directory(tmp_path)
+            finally:
+                walker_mod.parse_python_file = original
+
+        # Good file was indexed despite the failure
+        assert len(graph.vertices("function")) == 1
+        # Summary warning was emitted
+        assert any("1 of 2" in r.message and "skipped" in r.message for r in caplog.records)
+
 
 class TestSqliteStore:
     def test_persist_graph_creates_db_and_saves_rows(self, tmp_path):

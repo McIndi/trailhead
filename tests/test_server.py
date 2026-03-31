@@ -33,6 +33,29 @@ class TestModelStore:
         assert created == [("model-a", "/tmp/cache")]
 
 
+class TestRenderUiTemplate:
+    def test_substitutes_both_placeholders(self):
+        from cindex.server.app import _render_ui_template
+
+        result = _render_ui_template(
+            "model={{DEFAULT_MODEL}} db={{SQLITE_DB}}",
+            {"DEFAULT_MODEL": "my-model", "SQLITE_DB": "/tmp/db"},
+        )
+        assert result == "model=my-model db=/tmp/db"
+
+    def test_no_double_substitution_when_value_contains_other_placeholder(self):
+        """A model name containing {{SQLITE_DB}} must not cause the db path to appear."""
+        from cindex.server.app import _render_ui_template
+
+        result = _render_ui_template(
+            "model={{DEFAULT_MODEL}} db={{SQLITE_DB}}",
+            {"DEFAULT_MODEL": "tricky{{SQLITE_DB}}model", "SQLITE_DB": "/real/db"},
+        )
+        assert "/real/db" not in result.split("db=")[1] or result.count("/real/db") == 1
+        assert "tricky{{SQLITE_DB}}model" in result
+        assert result == "model=tricky{{SQLITE_DB}}model db=/real/db"
+
+
 class TestRateLimit:
     def test_requests_within_limit_succeed(self):
         from cindex.server.app import create_app

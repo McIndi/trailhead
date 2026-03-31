@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -353,8 +354,12 @@ def create_app(
 
     @app.get("/ui/", response_class=HTMLResponse, include_in_schema=False)
     def ui_dashboard() -> str:
-        return _load_ui_template().replace("{{DEFAULT_MODEL}}", default_model).replace(
-            "{{SQLITE_DB}}", configured_sqlite_db or "Not configured"
+        return _render_ui_template(
+            _load_ui_template(),
+            {
+                "DEFAULT_MODEL": default_model,
+                "SQLITE_DB": configured_sqlite_db or "Not configured",
+            },
         )
 
     return app
@@ -370,3 +375,13 @@ def _require_sqlite_db(configured_sqlite_db: str | None) -> Path:
 def _load_ui_template() -> str:
     template_path = Path(__file__).resolve().parent / "templates" / "query_ui.html"
     return template_path.read_text(encoding="utf-8")
+
+
+def _render_ui_template(template: str, replacements: dict[str, str]) -> str:
+    """Substitute {{KEY}} placeholders in a single regex pass.
+
+    All replacements happen simultaneously, so no substituted value can
+    accidentally match and trigger a second substitution.
+    """
+    pattern = re.compile("|".join(re.escape(f"{{{{{k}}}}}") for k in replacements))
+    return pattern.sub(lambda m: replacements[m.group(0)[2:-2]], template)

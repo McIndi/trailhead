@@ -26,11 +26,21 @@ def index_directory(root: Path, graph: PropertyGraph | None = None) -> PropertyG
     )
     logger.info("Found %d file(s) to index under %s", len(files), root)
 
+    failed: list[Path] = []
     for path in files:
         logger.debug("Indexing %s", path)
         try:
             parse_python_file(path, graph)
         except Exception:
             logger.warning("Failed to parse %s", path, exc_info=True)
+            failed.append(path)
+
+    if failed:
+        logger.warning(
+            "%d of %d file(s) could not be parsed and were skipped: %s",
+            len(failed),
+            len(files),
+            ", ".join(p.name for p in failed),
+        )
 
     return graph
