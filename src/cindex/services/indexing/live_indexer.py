@@ -192,7 +192,4 @@ class LiveIndexer:
 
 
 def _include_watch_change(change: Change, path: str) -> bool:
-    file_path = Path(path)
-    return file_path.suffix in supported_suffixes() or (
-        change == Change.deleted and file_path.suffix in supported_suffixes()
-    )
+    return Path(path).suffix in supported_suffixes()

@@ -129,25 +129,36 @@ def _handle_assignment(node, graph: PropertyGraph, module_v: Vertex, src: bytes)
 
 
 def _handle_local_assignment(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
-    # local foo = function() ... end
+    # Handles: local foo = function() ... end
+    # Walk direct children: identifiers before "=" are names, function_definitions
+    # after "=" are the values to index.  Also handles a "variable_list" wrapper
+    # that some grammar versions emit.
+    names: list[str] = []
+    func_nodes: list = []
+    seen_equals = False
+
     for child in node.children:
-        if child.type == "assignment_statement":
-            _handle_assignment(child, graph, module_v, src)
-            return
-    # Some grammars represent this differently
-    names = []
-    func_node = None
-    for child in node.children:
-        if child.type == "attribute_list":
-            for sub in child.children:
-                if sub.type == "attribute":
-                    name_node = sub.child_by_field_name("name")
-                    if name_node:
-                        names.append(_node_text(name_node, src))
-        elif child.type == "function_definition":
-            func_node = child
-    if func_node and names:
-        _add_function(func_node, names[0], graph, module_v, src)
+        t = child.type
+        if t == "=":
+            seen_equals = True
+        elif not seen_equals:
+            if t == "identifier":
+                names.append(_node_text(child, src))
+            elif t == "variable_list":
+                for sub in child.children:
+                    if sub.type == "identifier":
+                        names.append(_node_text(sub, src))
+        else:
+            if t == "function_definition":
+                func_nodes.append(child)
+            elif t == "expression_list":
+                for sub in child.children:
+                    if sub.type == "function_definition":
+                        func_nodes.append(sub)
+
+    for i, func in enumerate(func_nodes):
+        if i < len(names):
+            _add_function(func, names[i], graph, module_v, src)
 
 
 def _add_function(node, name: str, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

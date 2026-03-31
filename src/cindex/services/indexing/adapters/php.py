@@ -74,7 +74,9 @@ class PHPAdapter(LanguageAdapter):
             ) from exc
 
         source = path.read_bytes()
-        # tree-sitter-php exposes language_php() for files with <?php tags
+        # tree-sitter-php exposes two sub-grammars: language_php() (with <?php
+        # tags) and language_php_only() (pure PHP).  If this breaks on a version
+        # upgrade, check: dir(tsphp) for the right name.
         language = Language(tsphp.language_php())
         parser = Parser(language)
         tree = parser.parse(source)

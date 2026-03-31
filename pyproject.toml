@@ -29,16 +29,16 @@ dev = [
 # Install individual language groups as needed, or use [all-languages] for everything.
 javascript = ["tree-sitter-javascript>=0.21"]
 typescript = ["tree-sitter-typescript>=0.21"]
-rust       = ["tree-sitter-rust>=0.21"]
-go         = ["tree-sitter-go>=0.21"]
-java       = ["tree-sitter-java>=0.21"]
-csharp     = ["tree-sitter-c-sharp>=0.21"]
-c          = ["tree-sitter-c>=0.21"]
-cpp        = ["tree-sitter-cpp>=0.21"]
-ruby       = ["tree-sitter-ruby>=0.21"]
-php        = ["tree-sitter-php>=0.21"]
-bash       = ["tree-sitter-bash>=0.21"]
-lua        = ["tree-sitter-lua>=0.21"]
+rust = ["tree-sitter-rust>=0.21"]
+go = ["tree-sitter-go>=0.21"]
+java = ["tree-sitter-java>=0.21"]
+csharp = ["tree-sitter-c-sharp>=0.21"]
+c = ["tree-sitter-c>=0.21"]
+cpp = ["tree-sitter-cpp>=0.21"]
+ruby = ["tree-sitter-ruby>=0.21"]
+php = ["tree-sitter-php>=0.21"]
+bash = ["tree-sitter-bash>=0.21"]
+html = ["tree-sitter-html>=0.21"]
 all-languages = [
   "tree-sitter-javascript>=0.21",
   "tree-sitter-typescript>=0.21",
@@ -51,7 +51,7 @@ all-languages = [
   "tree-sitter-ruby>=0.21",
   "tree-sitter-php>=0.21",
   "tree-sitter-bash>=0.21",
-  "tree-sitter-lua>=0.21",
+  "tree-sitter-html>=0.21",
 ]
 
 [project.scripts]

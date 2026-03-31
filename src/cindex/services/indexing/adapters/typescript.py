@@ -85,6 +85,8 @@ class TypeScriptAdapter(LanguageAdapter):
             ) from exc
 
         source = path.read_bytes()
+        # tree-sitter-typescript exposes two sub-grammars via named factory fns.
+        # If this breaks on a version upgrade, check: dir(tsts) for the right name.
         language = Language(tsts.language_typescript())
         parser = Parser(language)
         tree = parser.parse(source)
@@ -118,7 +120,7 @@ class TSXAdapter(LanguageAdapter):
             ) from exc
 
         source = path.read_bytes()
-        language = Language(tsts.language_tsx())
+        language = Language(tsts.language_tsx())  # see note in TypeScriptAdapter
         parser = Parser(language)
         tree = parser.parse(source)
 
