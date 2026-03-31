@@ -153,4 +153,6 @@ def _vertex_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "name": properties.get("name"),
         "path": properties.get("path"),
         "line": properties.get("line"),
+        "docstring": properties.get("docstring"),
+        "source": properties.get("source"),
     }

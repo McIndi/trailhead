@@ -66,6 +66,28 @@ class TestGraphQueries:
         assert rows[0]["vertex_id"] == "f1"
         assert rows[0]["name"] == "alpha_fn"
 
+    def test_traverse_graph_includes_docstring_and_source(self, tmp_path):
+        from cindex.services.indexing.graph_query import traverse_graph
+
+        db = tmp_path / "query.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE vertices (id TEXT PRIMARY KEY, label TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "CREATE TABLE edges (id TEXT PRIMARY KEY, label TEXT NOT NULL, out_v_id TEXT NOT NULL, in_v_id TEXT NOT NULL, properties_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO vertices(id, label, properties_json) VALUES (?, ?, ?)",
+                ("f1", "function", '{"name": "fn", "path": "/tmp/a.py", "line": 1, "docstring": "Does things.", "source": "def fn(): pass"}'),
+            )
+
+        subgraph = traverse_graph(db, vertex_id="f1", direction="out", depth=1)
+
+        fn = next(v for v in subgraph["vertices"] if v["vertex_id"] == "f1")
+        assert fn["docstring"] == "Does things."
+        assert fn["source"] == "def fn(): pass"
+
     def test_traverse_graph_returns_neighbors(self, tmp_path):
         from cindex.services.indexing.graph_query import traverse_graph
 
