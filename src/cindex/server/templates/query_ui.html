@@ -301,7 +301,7 @@ async function loadStarterTemplates() {
   const select = document.getElementById('starter-select');
   select.innerHTML = '<option value="">Loading templates...</option>';
   try {
-    const res = await fetch('/query/templates');
+    const res = await fetch('/api/query/templates');
     const data = await res.json();
     if (!res.ok) {
       showError('starter-err', data.detail ?? JSON.stringify(data));
@@ -359,7 +359,7 @@ async function showStarterTemplate() {
   }
 
   try {
-    const res = await fetch(`/query/templates/${encodeURIComponent(name)}`);
+    const res = await fetch(`/api/query/templates/${encodeURIComponent(name)}`);
     const data = await res.json();
     if (!res.ok) {
       showError('starter-err', data.detail ?? JSON.stringify(data));
@@ -386,7 +386,7 @@ async function runStarterTemplate() {
   btn.disabled = true;
   btn.textContent = 'Running...';
   try {
-    const res = await fetch(`/query/templates/${encodeURIComponent(name)}/run`, {
+    const res = await fetch(`/api/query/templates/${encodeURIComponent(name)}/run`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: '{}',
@@ -423,11 +423,11 @@ async function searchVizVertices() {
   btn.disabled = true;
   btn.textContent = 'Searching...';
   try {
-    const res = await fetch('/graph/vertices', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
+    const params = new URLSearchParams({limit: payload.limit});
+    if (payload.name) params.set('name', payload.name);
+    if (payload.label) params.set('label', payload.label);
+    if (payload.path_contains) params.set('path_contains', payload.path_contains);
+    const res = await fetch(`/api/graph/vertices?${params}`);
     const data = await res.json();
     if (!res.ok) {
       showError('viz-err', data.detail ?? JSON.stringify(data));
@@ -481,11 +481,14 @@ async function renderVizGraph(vertexId = null) {
   btn.disabled = true;
   btn.textContent = 'Rendering...';
   try {
-    const res = await fetch('/graph/traverse', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
+    const params = new URLSearchParams({
+      vertex_id: payload.vertex_id,
+      direction: payload.direction,
+      depth: payload.depth,
+      max_vertices: payload.max_vertices,
     });
+    if (payload.edge_labels) params.set('edge_labels', payload.edge_labels.join(','));
+    const res = await fetch(`/api/graph/traverse?${params}`);
     const data = await res.json();
     if (!res.ok) {
       showError('viz-err', data.detail ?? JSON.stringify(data));
@@ -637,7 +640,7 @@ async function runSql() {
   btn.disabled = true;
   btn.textContent = 'Running...';
   try {
-    const res = await fetch('/query/sql', {
+    const res = await fetch('/api/query/sql', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({sql})
@@ -670,11 +673,9 @@ async function runSim() {
   btn.disabled = true;
   btn.textContent = 'Searching...';
   try {
-    const res = await fetch('/query/similar', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text, k, label})
-    });
+    const params = new URLSearchParams({text, k});
+    if (label) params.set('label', label);
+    const res = await fetch(`/api/query/similar?${params}`);
     const data = await res.json();
     if (!res.ok) {
       showError('sim-err', data.detail ?? JSON.stringify(data));
