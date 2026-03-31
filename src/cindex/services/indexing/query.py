@@ -10,16 +10,15 @@ from typing import Any
 from cindex.services.embeddings import generate_embedding
 from cindex.services.indexing.sqlite_store import vector_to_blob
 
-READ_ONLY_PREFIXES: tuple[str, ...] = ("select", "with", "pragma", "explain")
-
-
 def execute_sql_query(db_path: Path, sql: str) -> tuple[list[str], list[dict[str, Any]]]:
-    """Execute a read-only SQL statement and return column names and rows."""
-    normalized = sql.lstrip().lower()
-    if not normalized.startswith(READ_ONLY_PREFIXES):
-        raise ValueError("Only read-only SQL statements are supported.")
+    """Execute a SQL statement against a read-only connection and return column names and rows.
 
-    with sqlite3.connect(db_path) as conn:
+    The connection is opened with SQLite's ``mode=ro`` URI flag so the engine
+    itself enforces the read-only constraint — no string-prefix heuristic is
+    needed or used.
+    """
+    ro_uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    with sqlite3.connect(ro_uri, uri=True) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(sql)
         columns = [description[0] for description in (cursor.description or [])]

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 import struct
 
+import pytest
+
 
 class TestExecuteSqlQuery:
     def test_execute_sql_query_returns_columns_and_rows(self, tmp_path):
@@ -18,19 +20,26 @@ class TestExecuteSqlQuery:
         assert columns == ["id", "name"]
         assert rows == [{"id": 1, "name": "alpha"}]
 
-    def test_execute_sql_query_rejects_non_read_only_sql(self, tmp_path):
+    def test_execute_sql_query_rejects_write_statement(self, tmp_path):
         from cindex.services.indexing.query import execute_sql_query
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
             conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
 
-        try:
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
             execute_sql_query(db, "DELETE FROM items")
-        except ValueError as exc:
-            assert "read-only" in str(exc)
-        else:
-            raise AssertionError("Expected ValueError for non-read-only SQL")
+
+    def test_execute_sql_query_rejects_write_with_comment_prefix(self, tmp_path):
+        """Regression: comment-prefixed write statements must not bypass the read-only guard."""
+        from cindex.services.indexing.query import execute_sql_query
+
+        db = tmp_path / "query.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
+
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            execute_sql_query(db, "  -- looks like a comment\nDELETE FROM items")
 
 
 class TestGraphQueries:
