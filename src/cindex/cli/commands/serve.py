@@ -104,12 +104,12 @@ def run(args: argparse.Namespace) -> int:
 
     watch_directory = str(Path(args.directory).resolve())
 
-    db_path = (
+    db_path_for_checks = (
         Path(args.sqlite_db).resolve()
         if args.sqlite_db
         else Path(watch_directory) / _DEFAULT_DB_SUBPATH
     )
-    existing_model = get_index_model(db_path)
+    existing_model = get_index_model(db_path_for_checks)
     if existing_model is not None and existing_model != args.model:
         logger.error(
             "Model mismatch: server is configured with '%s' but the index was built with '%s'. "
@@ -118,10 +118,12 @@ def run(args: argparse.Namespace) -> int:
             args.model,
             existing_model,
             args.model,
-            db_path,
+            db_path_for_checks,
             existing_model,
         )
         return 1
+
+    sqlite_db_for_app = args.sqlite_db if args.sqlite_db else str(db_path_for_checks)
 
     logger.info(
         "Starting cindex API server on %s:%d with model %s watching %s",
@@ -144,7 +146,7 @@ def run(args: argparse.Namespace) -> int:
     app = create_app(
         default_model=args.model,
         cache_dir=cache_dir,
-        sqlite_db=str(db_path),
+        sqlite_db=sqlite_db_for_app,
         watch_directory=watch_directory,
         preload_default_model=not args.no_preload,
         run_indexer=True,

@@ -506,7 +506,7 @@ def _persist_embedding_candidates(
 
 
 def _try_initialize_sqlite_vector(conn: sqlite3.Connection, dimension: int) -> bool:
-    if not _try_load_sqlite_vector_extension(conn):
+    if not _load_sqlite_vector_extension(conn):
         return False
 
     config = f"type=FLOAT32,dimension={dimension},distance=COSINE"
@@ -517,7 +517,7 @@ def _try_initialize_sqlite_vector(conn: sqlite3.Connection, dimension: int) -> b
     return True
 
 
-def _try_load_sqlite_vector_extension(conn: sqlite3.Connection) -> bool:
+def _load_sqlite_vector_extension(conn: sqlite3.Connection) -> bool:
     try:
         ext_path = importlib.resources.files("sqlite_vector.binaries") / "vector"
     except (ModuleNotFoundError, FileNotFoundError):
@@ -535,3 +535,8 @@ def _try_load_sqlite_vector_extension(conn: sqlite3.Connection) -> bool:
         return False
 
     return True
+
+
+def _try_load_sqlite_vector_extension(conn: sqlite3.Connection) -> bool:
+    """Backward-compatible alias for older internal call sites."""
+    return _load_sqlite_vector_extension(conn)

@@ -37,13 +37,13 @@ def search_vertices(
     if exclude_external and not label:
         clauses.append("label != 'external'")
     if name:
-        clauses.append("name LIKE ?")
+        clauses.append("json_extract(properties_json, '$.name') LIKE ?")
         params.append(f"%{name}%")
     if label:
         clauses.append("label = ?")
         params.append(label)
     if path_contains:
-        clauses.append("path LIKE ?")
+        clauses.append("json_extract(properties_json, '$.path') LIKE ?")
         params.append(f"%{path_contains}%")
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
@@ -51,7 +51,11 @@ def search_vertices(
     SELECT id, label, properties_json
     FROM vertices
     {where}
-    ORDER BY label, path, COALESCE(line, 0), COALESCE(name, id)
+        ORDER BY
+            label,
+            COALESCE(json_extract(properties_json, '$.path'), ''),
+            COALESCE(json_extract(properties_json, '$.line'), 0),
+            COALESCE(json_extract(properties_json, '$.name'), id)
     LIMIT {limit}
     """
 

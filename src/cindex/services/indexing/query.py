@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.resources
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from cindex.services.embeddings import generate_embedding
+from cindex.services.indexing.sqlite_store import _load_sqlite_vector_extension
 from cindex.services.indexing.sqlite_store import vector_to_blob
 
 def execute_sql_query(db_path: Path, sql: str) -> tuple[list[str], list[dict[str, Any]]]:
@@ -52,7 +52,8 @@ def find_similar_vertices(
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        _load_sqlite_vector_extension(conn)
+        if not _load_sqlite_vector_extension(conn):
+            raise RuntimeError("Failed to load the sqlite-vector extension.")
 
         dimension = _get_embedding_dimension(conn)
         if dimension is None:
@@ -81,9 +82,9 @@ def find_similar_vertices(
         SELECT
           v.id AS vertex_id,
           v.label,
-          v.name,
-          v.path,
-          v.line,
+                    json_extract(v.properties_json, '$.name') AS name,
+                    json_extract(v.properties_json, '$.path') AS path,
+                    json_extract(v.properties_json, '$.line') AS line,
           json_extract(v.properties_json, '$.docstring') AS docstring,
           json_extract(v.properties_json, '$.source') AS source,
           ve.model_name,
@@ -96,25 +97,6 @@ def find_similar_vertices(
         LIMIT {k}
         """
         return [dict(row) for row in conn.execute(sql, tuple(params)).fetchall()]
-
-
-def _load_sqlite_vector_extension(conn: sqlite3.Connection) -> None:
-    try:
-        ext_path = importlib.resources.files("sqlite_vector.binaries") / "vector"
-    except (ModuleNotFoundError, FileNotFoundError) as exc:
-        raise RuntimeError("sqliteai-vector is not installed or its binary was not found.") from exc
-
-    try:
-        conn.enable_load_extension(True)
-        conn.load_extension(str(ext_path))
-        conn.enable_load_extension(False)
-    except (AttributeError, sqlite3.DatabaseError, sqlite3.OperationalError) as exc:
-        try:
-            conn.enable_load_extension(False)
-        except Exception:
-            pass
-        raise RuntimeError("Failed to load the sqlite-vector extension.") from exc
-
 
 def _get_embedding_dimension(conn: sqlite3.Connection) -> int | None:
     row = conn.execute("SELECT dimension FROM vertex_embeddings LIMIT 1").fetchone()

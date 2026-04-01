@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 import sqlite3
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -44,36 +46,34 @@ class SqlRequest(BaseModel):
     sql: str = Field(max_length=10_000)
 
 
-def create_app(
-    *,
-    default_model: str = DEFAULT_MODEL,
-    cache_dir: str | None = None,
-    sqlite_db: str | None = None,
-    watch_directory: str | None = None,
-    preload_default_model: bool = True,
-    run_indexer: bool = False,
-    cors_origins: list[str] | None = None,
-    rate_limit: int = 120,
-) -> FastAPI:
-    configured_sqlite_db = str(Path(sqlite_db).resolve()) if sqlite_db else None
-    configured_watch_directory = str(Path(watch_directory).resolve()) if watch_directory else None
+@dataclass(frozen=True)
+class AppConfig:
+    default_model: str
+    cache_dir: str | None
+    configured_sqlite_db: str | None
+    configured_watch_directory: str | None
+    preload_default_model: bool
+    run_indexer: bool
+
+
+def _build_lifespan(config: AppConfig):
     live_indexer: LiveIndexer | None = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal live_indexer
 
-        if preload_default_model:
-            preload_embedding_model(default_model, cache_folder=cache_dir)
+        if config.preload_default_model:
+            preload_embedding_model(config.default_model, cache_folder=config.cache_dir)
 
-        if run_indexer:
-            if not configured_sqlite_db or not configured_watch_directory:
+        if config.run_indexer:
+            if not config.configured_sqlite_db or not config.configured_watch_directory:
                 raise RuntimeError("run_indexer requires both sqlite_db and watch_directory")
             live_indexer = LiveIndexer(
-                root=Path(configured_watch_directory),
-                db_path=Path(configured_sqlite_db),
-                model_name=default_model,
-                cache_folder=cache_dir,
+                root=Path(config.configured_watch_directory),
+                db_path=Path(config.configured_sqlite_db),
+                model_name=config.default_model,
+                cache_folder=config.cache_dir,
             )
             live_indexer.synchronize()
             live_indexer.start()
@@ -85,12 +85,230 @@ def create_app(
             if live_indexer is not None:
                 live_indexer.stop()
 
+    return lifespan
+
+
+def _get_config(request: Request) -> AppConfig:
+    return request.app.state.config
+
+
+def health(request: Request) -> dict[str, object]:
+    config = _get_config(request)
+    return {
+        "status": "ok",
+        "default_model": config.default_model,
+        "sqlite_db": config.configured_sqlite_db,
+        "watch_directory": config.configured_watch_directory,
+        "preloaded": config.preload_default_model,
+        "indexer_enabled": config.run_indexer,
+    }
+
+
+def embed(request: Request, payload: EmbedRequest) -> dict[str, object]:
+    config = _get_config(request)
+    embedding = generate_embedding(
+        payload.text,
+        config.default_model,
+        cache_folder=config.cache_dir,
+    )
+    return {
+        "model": config.default_model,
+        "dimensions": len(embedding),
+        "embedding": embedding,
+    }
+
+
+def embed_batch(request: Request, payload: BatchEmbedRequest) -> dict[str, object]:
+    config = _get_config(request)
+    embeddings = generate_embeddings(
+        payload.texts,
+        config.default_model,
+        cache_folder=config.cache_dir,
+    )
+    return {
+        "model": config.default_model,
+        "count": len(embeddings),
+        "dimensions": len(embeddings[0]) if embeddings else 0,
+        "embeddings": embeddings,
+    }
+
+
+def query_sql(request: Request, payload: SqlRequest) -> dict[str, object]:
+    config = _get_config(request)
+    try:
+        columns, rows = execute_sql_query(_require_sqlite_db(config.configured_sqlite_db), payload.sql)
+    except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"columns": columns, "rows": rows}
+
+
+def query_templates() -> dict[str, object]:
+    templates = list_query_templates()
+    return {"count": len(templates), "templates": templates}
+
+
+def query_template(name: str) -> dict[str, str]:
+    try:
+        template = get_query_template(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "name": template.name,
+        "category": template.category,
+        "title": template.title,
+        "description": template.description,
+        "sql": template.sql,
+    }
+
+
+def run_query_template(request: Request, name: str) -> dict[str, object]:
+    config = _get_config(request)
+    try:
+        template = get_query_template(name)
+        columns, rows = execute_sql_query(_require_sqlite_db(config.configured_sqlite_db), template.sql)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "template": {
+            "name": template.name,
+            "category": template.category,
+            "title": template.title,
+            "description": template.description,
+        },
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def query_similar(
+    request: Request,
+    text: str = Query(max_length=2_000),
+    k: int = Query(default=10, ge=1, le=100),
+    label: str = Query(default=None, max_length=100),
+    include_external: bool = Query(default=False),
+) -> dict[str, object]:
+    config = _get_config(request)
+    try:
+        rows = find_similar_vertices(
+            _require_sqlite_db(config.configured_sqlite_db),
+            text,
+            model_name=config.default_model,
+            cache_folder=config.cache_dir,
+            k=k,
+            label=label,
+            exclude_external=not include_external,
+        )
+    except (ValueError, RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"count": len(rows), "rows": rows}
+
+
+def graph_vertices_get(
+    request: Request,
+    name: str = Query(default=None, max_length=200),
+    label: str = Query(default=None, max_length=100),
+    path_contains: str = Query(default=None, max_length=500),
+    limit: int = Query(default=20, ge=1, le=200),
+    include_external: bool = Query(default=False),
+) -> dict[str, object]:
+    config = _get_config(request)
+    try:
+        rows = search_vertices(
+            _require_sqlite_db(config.configured_sqlite_db),
+            name=name,
+            label=label,
+            path_contains=path_contains,
+            limit=limit,
+            exclude_external=not include_external,
+        )
+    except (ValueError, RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"count": len(rows), "rows": rows}
+
+
+def graph_traverse_get(
+    request: Request,
+    vertex_id: str = Query(max_length=200),
+    direction: str = Query(default="both", max_length=10),
+    depth: int = Query(default=1, ge=1, le=5),
+    edge_labels: str = Query(default=None, max_length=500),
+    max_vertices: int = Query(default=100, ge=1, le=500),
+) -> dict[str, object]:
+    config = _get_config(request)
+    try:
+        edge_labels_list = [e.strip() for e in edge_labels.split(",") if e.strip()] if edge_labels else None
+        return traverse_graph(
+            _require_sqlite_db(config.configured_sqlite_db),
+            vertex_id=vertex_id,
+            direction=direction,
+            depth=depth,
+            edge_labels=edge_labels_list,
+            max_vertices=max_vertices,
+        )
+    except (ValueError, RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def ui_dashboard(request: Request) -> str:
+    config = _get_config(request)
+    return _render_ui_template(
+        _load_ui_template(),
+        {
+            "DEFAULT_MODEL": config.default_model,
+            "SQLITE_DB": config.configured_sqlite_db or "Not configured",
+        },
+    )
+
+
+def _register_routes(app: FastAPI) -> None:
+    app.add_api_route("/api/health", health, methods=["GET"])
+    app.add_api_route("/api/embed", embed, methods=["POST"])
+    app.add_api_route("/api/embed/batch", embed_batch, methods=["POST"])
+    app.add_api_route("/api/query/sql", query_sql, methods=["POST"])
+    app.add_api_route("/api/query/templates", query_templates, methods=["GET"])
+    app.add_api_route("/api/query/templates/{name}", query_template, methods=["GET"])
+    app.add_api_route("/api/query/templates/{name}/run", run_query_template, methods=["POST"])
+    app.add_api_route("/api/query/similar", query_similar, methods=["GET"])
+    app.add_api_route("/api/graph/vertices", graph_vertices_get, methods=["GET"])
+    app.add_api_route("/api/graph/traverse", graph_traverse_get, methods=["GET"])
+    app.add_api_route(
+        "/ui/",
+        ui_dashboard,
+        methods=["GET"],
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+
+
+def create_app(
+    *,
+    default_model: str = DEFAULT_MODEL,
+    cache_dir: str | None = None,
+    sqlite_db: str | None = None,
+    watch_directory: str | None = None,
+    preload_default_model: bool = True,
+    run_indexer: bool = False,
+    cors_origins: list[str] | None = None,
+    rate_limit: int = 120,
+) -> FastAPI:
+    config = AppConfig(
+        default_model=default_model,
+        cache_dir=cache_dir,
+        configured_sqlite_db=str(Path(sqlite_db).resolve()) if sqlite_db else None,
+        configured_watch_directory=str(Path(watch_directory).resolve()) if watch_directory else None,
+        preload_default_model=preload_default_model,
+        run_indexer=run_indexer,
+    )
+
     app = FastAPI(
         title="cindex API",
         version="0.1.0",
         description="Warm-model API for embeddings and SQLite-backed code queries.",
-        lifespan=lifespan,
+        lifespan=_build_lifespan(config),
     )
+    app.state.config = config
 
     if cors_origins:
         app.add_middleware(
@@ -103,268 +321,7 @@ def create_app(
     if rate_limit > 0:
         app.add_middleware(RateLimitMiddleware, requests_per_minute=rate_limit)
 
-    @app.get("/api/health")
-    def health() -> dict[str, object]:
-        """
-        Health check endpoint.
-        Returns basic status and configuration information for the API server.
-
-        Returns:
-            dict: Status, model, database, and indexer configuration.
-        """
-        return {
-            "status": "ok",
-            "default_model": default_model,
-            "sqlite_db": configured_sqlite_db,
-            "watch_directory": configured_watch_directory,
-            "preloaded": preload_default_model,
-            "indexer_enabled": run_indexer,
-        }
-
-    @app.post("/api/embed")
-    def embed(request: EmbedRequest) -> dict[str, object]:
-        """
-        Generate an embedding vector for a single text string.
-
-        Args:
-            request (EmbedRequest):
-                text: The input string to embed.
-                model: The embedding model to use.
-                cache_dir: Optional cache directory for model files.
-
-        Returns:
-            dict: Model name, embedding vector, and dimension count.
-        """
-        embedding = generate_embedding(
-            request.text,
-            default_model,
-            cache_folder=cache_dir,
-        )
-        return {
-            "model": default_model,
-            "dimensions": len(embedding),
-            "embedding": embedding,
-        }
-
-    @app.post("/api/embed/batch")
-    def embed_batch(request: BatchEmbedRequest) -> dict[str, object]:
-        """
-        Generate embedding vectors for a batch of text strings.
-
-        Args:
-            request (BatchEmbedRequest):
-                texts: List of input strings to embed.
-                model: The embedding model to use.
-                cache_dir: Optional cache directory for model files.
-
-        Returns:
-            dict: Model name, embedding vectors, count, and dimension.
-        """
-        embeddings = generate_embeddings(
-            request.texts,
-            default_model,
-            cache_folder=cache_dir,
-        )
-        return {
-            "model": default_model,
-            "count": len(embeddings),
-            "dimensions": len(embeddings[0]) if embeddings else 0,
-            "embeddings": embeddings,
-        }
-
-    @app.post("/api/query/sql")
-    def query_sql(request: SqlRequest) -> dict[str, object]:
-        """
-        Execute an arbitrary SQL query against the indexed code database.
-
-        Args:
-            request (SqlRequest):
-                sql: The SQL query string to execute.
-
-        Returns:
-            dict: Columns and rows from the query result.
-        """
-        try:
-            columns, rows = execute_sql_query(_require_sqlite_db(configured_sqlite_db), request.sql)
-        except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"columns": columns, "rows": rows}
-
-    @app.get("/api/query/templates")
-    def query_templates() -> dict[str, object]:
-        """
-        List all available starter SQL query templates.
-
-        Returns:
-            dict: Count and metadata for each query template.
-        """
-        templates = list_query_templates()
-        return {"count": len(templates), "templates": templates}
-
-    @app.get("/api/query/templates/{name}")
-    def query_template(name: str) -> dict[str, str]:
-        """
-        Get metadata and SQL for a specific starter query template.
-
-        Args:
-            name (str): Name of the query template.
-
-        Returns:
-            dict: Template metadata and SQL string.
-        """
-        try:
-            template = get_query_template(name)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return {
-            "name": template.name,
-            "category": template.category,
-            "title": template.title,
-            "description": template.description,
-            "sql": template.sql,
-        }
-
-    @app.post("/api/query/templates/{name}/run")
-    def run_query_template(name: str) -> dict[str, object]:
-        """
-        Execute a starter query template by name and return the results.
-
-        Args:
-            name (str): Name of the query template to run.
-
-        Returns:
-            dict: Template metadata, columns, and rows from the query result.
-        """
-        try:
-            template = get_query_template(name)
-            columns, rows = execute_sql_query(_require_sqlite_db(configured_sqlite_db), template.sql)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except (RuntimeError, OSError, sqlite3.Error) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {
-            "template": {
-                "name": template.name,
-                "category": template.category,
-                "title": template.title,
-                "description": template.description,
-            },
-            "columns": columns,
-            "rows": rows,
-        }
-
-    @app.get("/api/query/similar")
-    def query_similar(
-        text: str = Query(max_length=2_000),
-        k: int = Query(default=10, ge=1, le=100),
-        label: str = Query(default=None, max_length=100),
-        include_external: bool = Query(default=False),
-    ) -> dict[str, object]:
-        """
-        Perform a semantic similarity search for code symbols.
-
-        Args (as query parameters):
-            text (str): Query text to search for similar code symbols.
-            k (int, optional): Number of top results to return. Default is 10.
-            label (str, optional): Filter by symbol label (e.g., function, class).
-
-        Returns:
-            dict: Count and list of matching code symbols.
-        """
-        try:
-            rows = find_similar_vertices(
-                _require_sqlite_db(configured_sqlite_db),
-                text,
-                model_name=default_model,
-                cache_folder=cache_dir,
-                k=k,
-                label=label,
-                exclude_external=not include_external,
-            )
-        except (ValueError, RuntimeError, OSError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"count": len(rows), "rows": rows}
-
-
-
-    @app.get("/api/graph/vertices")
-    def graph_vertices_get(
-        name: str = Query(default=None, max_length=200),
-        label: str = Query(default=None, max_length=100),
-        path_contains: str = Query(default=None, max_length=500),
-        limit: int = Query(default=20, ge=1, le=200),
-        include_external: bool = Query(default=False),
-    ) -> dict[str, object]:
-        """
-        Search for code vertices (modules, classes, functions, etc.) in the code index.
-
-        Args (as query parameters):
-            name (str, optional): Filter by symbol name (substring match).
-            label (str, optional): Filter by symbol label (e.g., function, class).
-            path_contains (str, optional): Filter by file path substring.
-            limit (int, optional): Maximum number of results to return. Default is 20.
-
-        Returns:
-            dict: Count and list of matching vertices.
-        """
-        try:
-            rows = search_vertices(
-                _require_sqlite_db(configured_sqlite_db),
-                name=name,
-                label=label,
-                path_contains=path_contains,
-                limit=limit,
-                exclude_external=not include_external,
-            )
-        except (ValueError, RuntimeError, OSError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"count": len(rows), "rows": rows}
-
-
-
-    @app.get("/api/graph/traverse")
-    def graph_traverse_get(
-        vertex_id: str = Query(max_length=200),
-        direction: str = Query(default="both", max_length=10),
-        depth: int = Query(default=1, ge=1, le=5),
-        edge_labels: str = Query(default=None, max_length=500),
-        max_vertices: int = Query(default=100, ge=1, le=500),
-    ) -> dict[str, object]:
-        """
-        Traverse the code property graph from a given vertex.
-
-        Args (as query parameters):
-            vertex_id (str): The ID of the starting vertex.
-            direction (str, optional): 'in', 'out', or 'both'. Default is 'both'.
-            depth (int, optional): Number of hops to traverse. Default is 1.
-            edge_labels (str, optional): Comma-separated edge labels to follow.
-            max_vertices (int, optional): Maximum vertices to return. Default is 100.
-
-        Returns:
-            dict: Graph traversal result (vertices, edges, etc.).
-        """
-        try:
-            edge_labels_list = [e.strip() for e in edge_labels.split(",") if e.strip()] if edge_labels else None
-            return traverse_graph(
-                _require_sqlite_db(configured_sqlite_db),
-                vertex_id=vertex_id,
-                direction=direction,
-                depth=depth,
-                edge_labels=edge_labels_list,
-                max_vertices=max_vertices,
-            )
-        except (ValueError, RuntimeError, OSError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    @app.get("/ui/", response_class=HTMLResponse, include_in_schema=False)
-    def ui_dashboard() -> str:
-        return _render_ui_template(
-            _load_ui_template(),
-            {
-                "DEFAULT_MODEL": default_model,
-                "SQLITE_DB": configured_sqlite_db or "Not configured",
-            },
-        )
+    _register_routes(app)
 
     return app
 
