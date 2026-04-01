@@ -4,19 +4,20 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import threading
 from pathlib import Path
 
 from cindex.services.config import ALLOWED_MODELS
 from cindex.services.config import get_cache_dir
 from cindex.services.config import is_model_allowed
+from cindex.services.indexing import LiveIndexer
 from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.sqlite_store import get_index_model
-from cindex.services.indexing.sqlite_store import persist_graph
-from cindex.services.indexing.sqlite_store import persist_indexed_files
-from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
 from cindex.services.indexing.walker import index_directory
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_DB_SUBPATH = ".cindex/db.sqlite"
 
 
 def configure_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -26,7 +27,8 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         description=(
             "Recursively parse source files under a directory and build a "
             "TinkerPop-compatible property graph of code relationships "
-            "(modules, classes, functions, imports)."
+            "(modules, classes, functions, imports). "
+            f"The graph is persisted to <directory>/{_DEFAULT_DB_SUBPATH} by default."
         ),
     )
     parser.add_argument(
@@ -36,33 +38,45 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Root directory to index (default: current directory).",
     )
     parser.add_argument(
-        "--output",
-        choices=["summary", "json"],
-        default="summary",
-        help="Output format (default: summary).",
-    )
-    parser.add_argument(
         "--sqlite-db",
         default=None,
         help=(
-            "Optional SQLite database file to persist the indexed graph "
-            "(for example: ./.cindex/graph.db)."
+            f"SQLite database file for graph persistence "
+            f"(default: <directory>/{_DEFAULT_DB_SUBPATH}). "
+            "Ignored when --in-memory is set."
         ),
     )
     parser.add_argument(
-        "--append",
+        "--in-memory",
         action="store_true",
         help=(
-            "Append into an existing SQLite graph instead of replacing all rows. "
-            "Only applies when --sqlite-db is provided."
+            "Build the graph in memory only — do not persist to SQLite. "
+            "Outputs a summary (or JSON with --output json) and exits immediately. "
+            "Incompatible with --watch."
         ),
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help=(
+            "After the initial sync, watch the directory for file changes and "
+            "reindex incrementally. Incompatible with --in-memory. "
+            "Press Ctrl-C to stop."
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        choices=["summary", "json"],
+        default="summary",
+        help="Output format when --in-memory is set (default: summary).",
     )
     parser.add_argument(
         "--embed-model",
         default=None,
         help=(
-            "Optional sentence-transformers model name. If provided with --sqlite-db, "
-            "stores vertex embeddings in the same SQLite file."
+            "Optional sentence-transformers model name. "
+            "Stores vertex embeddings in the SQLite database. "
+            "Incompatible with --in-memory."
         ),
     )
     parser.add_argument(
@@ -94,6 +108,14 @@ def run(args: argparse.Namespace) -> int:
         logger.error("Not a directory: %s", root)
         return 1
 
+    if args.in_memory and args.watch:
+        logger.error("--in-memory and --watch are mutually exclusive.")
+        return 1
+
+    if args.embed_model and args.in_memory:
+        logger.error("--embed-model requires SQLite persistence; remove --in-memory.")
+        return 1
+
     if args.embed_model and not is_model_allowed(args.embed_model, allow_any=args.allow_any_model):
         logger.error(
             "Model '%s' is not in the allowlist. Allowed models: %s. "
@@ -103,13 +125,26 @@ def run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if args.embed_model and not args.sqlite_db:
-        logger.error("--embed-model requires --sqlite-db so vectors can be persisted.")
-        return 1
+    # ------------------------------------------------------------------
+    # In-memory path: one-shot build, print summary/JSON, then exit.
+    # ------------------------------------------------------------------
+    if args.in_memory:
+        logger.info("Indexing %s (in-memory)", root)
+        graph = index_directory(root)
+        if args.output == "json":
+            _print_json(graph)
+        else:
+            _print_summary(graph)
+        return 0
 
-    if args.embed_model and args.sqlite_db:
-        db_path_check = Path(args.sqlite_db).resolve()
-        existing_model = get_index_model(db_path_check)
+    # ------------------------------------------------------------------
+    # SQLite path: use LiveIndexer for smart sync (and optionally watch).
+    # This is the same code path used by ``cindex serve``.
+    # ------------------------------------------------------------------
+    db_path = Path(args.sqlite_db).resolve() if args.sqlite_db else root / _DEFAULT_DB_SUBPATH
+
+    if args.embed_model:
+        existing_model = get_index_model(db_path)
         if existing_model is not None and existing_model != args.embed_model:
             print(
                 f"Warning: the existing index was built with model '{existing_model}', "
@@ -121,47 +156,28 @@ def run(args: argparse.Namespace) -> int:
                 logger.info("Aborted.")
                 return 0
 
-    logger.info("Indexing %s", root)
-    graph = index_directory(root)
+    cache_dir = args.embed_cache_dir or get_cache_dir()
+    if cache_dir:
+        cache_dir = str(Path(cache_dir).resolve())
 
-    if args.sqlite_db:
-        db_path = Path(args.sqlite_db).resolve()
-        v_count, e_count = persist_graph(graph, db_path, append=args.append)
-        logger.info("Persisted graph to %s (%d vertices, %d edges)", db_path, v_count, e_count)
+    indexer = LiveIndexer(
+        root=root,
+        db_path=db_path,
+        model_name=args.embed_model,
+        cache_folder=cache_dir,
+    )
+    indexer.synchronize()
 
-        if args.embed_model:
-            cache_dir = args.embed_cache_dir or get_cache_dir()
-            if cache_dir:
-                cache_dir = str(Path(cache_dir).resolve())
-            emb_count, dim, vector_ready = persist_vertex_embeddings(
-                graph,
-                db_path,
-                model_name=args.embed_model,
-                cache_folder=cache_dir,
-                append=args.append,
-                initialize_vector_extension=True,
-            )
-            logger.info(
-                "Persisted %d embedding row(s) to %s (dimension=%d)",
-                emb_count,
-                db_path,
-                dim,
-            )
-            if vector_ready:
-                logger.info("sqlite-vector extension initialized for vertex_embeddings.embedding")
-            else:
-                logger.warning(
-                    "Could not initialize sqlite-vector extension. "
-                    "Embeddings were still persisted as FLOAT32 BLOBs."
-                )
-
-        indexed_file_count = persist_indexed_files(root, db_path, append=args.append)
-        logger.info("Recorded %d indexed file snapshot row(s) in %s", indexed_file_count, db_path)
-
-    if args.output == "json":
-        _print_json(graph)
-    else:
-        _print_summary(graph)
+    if args.watch:
+        logger.info("Watching %s for changes — press Ctrl-C to stop.", root)
+        indexer.start()
+        _stop = threading.Event()
+        try:
+            _stop.wait()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            indexer.stop()
 
     return 0
 
