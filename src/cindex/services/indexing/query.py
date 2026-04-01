@@ -35,12 +35,17 @@ def find_similar_vertices(
     k: int = 10,
     label: str | None = None,
     exclude_external: bool = True,
+    vector: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the nearest stored vertices to *query_text*.
 
     By default external import vertices are excluded from results since they
     carry no source location and are rarely useful in search output.  Pass
     ``exclude_external=False`` to include them.
+
+    If *vector* is supplied it is used directly and the local embedding model
+    is not loaded.  This allows callers to delegate embedding to a running
+    ``cindex serve`` instance and avoid the cold-load penalty.
     """
     if k < 1:
         raise ValueError("k must be at least 1")
@@ -55,11 +60,12 @@ def find_similar_vertices(
 
         _prepare_vector_search(conn, dimension)
 
-        vector = generate_embedding(
-            query_text,
-            model_name=model_name,
-            cache_folder=cache_folder,
-        )
+        if vector is None:
+            vector = generate_embedding(
+                query_text,
+                model_name=model_name,
+                cache_folder=cache_folder,
+            )
         query_blob = vector_to_blob(vector)
 
         clauses: list[str] = []

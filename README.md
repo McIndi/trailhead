@@ -133,8 +133,8 @@ cindex serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-
 Then call the API from another terminal:
 
 ```powershell
-curl http://127.0.0.1:8000/health
-curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"text":"hello world"}'
+curl http://127.0.0.1:8000/api/health
+curl -X POST http://127.0.0.1:8000/api/embed -H "Content-Type: application/json" -d '{"text":"hello world"}'
 ```
 
 Run a read-only SQL query against the SQLite database (defaults to `./.cindex/db.sqlite`):
@@ -154,7 +154,7 @@ cindex query similar "find sqlite vector initialization code" --sqlite-db ./.cin
 The same semantic query is also available over HTTP once the server is running. The server owns the configured SQLite database path, so the browser or API client only sends the query payload:
 
 ```powershell
-curl -X POST http://127.0.0.1:8000/query/similar -H "Content-Type: application/json" -d '{"text":"find sqlite vector initialization code"}'
+curl "http://127.0.0.1:8000/api/query/similar?text=find%20sqlite%20vector%20initialization%20code"
 ```
 
 Limit the search to a specific vertex label and format the output as JSON:
@@ -166,13 +166,13 @@ cindex query similar "graph persistence" --sqlite-db ./.cindex/graph.db --label 
 Search graph vertices over HTTP:
 
 ```powershell
-curl -X POST http://127.0.0.1:8000/graph/vertices -H "Content-Type: application/json" -d '{"name":"persist","label":"function"}'
+curl "http://127.0.0.1:8000/api/graph/vertices?name=persist&label=function"
 ```
 
 Traverse a local subgraph from a known vertex id:
 
 ```powershell
-curl -X POST http://127.0.0.1:8000/graph/traverse -H "Content-Type: application/json" -d '{"vertex_id":"<vertex-id>","direction":"both","depth":1}'
+curl "http://127.0.0.1:8000/api/graph/traverse?vertex_id=<vertex-id>&direction=both&depth=1"
 ```
 
 You can also run the module directly:
@@ -241,7 +241,6 @@ pytest
 |           |       |-- ruby.py        # Ruby (optional)
 |           |       |-- php.py         # PHP (optional)
 |           |       |-- bash.py        # Bash / Shell (optional)
-|           |       |-- lua.py         # Lua (optional)
 |           |       `-- html.py        # HTML (optional)
 |           `-- embeddings/
 |               |-- generator.py

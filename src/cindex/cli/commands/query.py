@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from cindex.services.indexing.query import find_similar_vertices
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _DEFAULT_DB_SUBPATH = ".cindex/db.sqlite"
+_DEFAULT_SERVER = "http://127.0.0.1:8000"
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,16 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Optional vertex label filter (for example: module, function, class, external).",
     )
     similar_parser.add_argument(
+        "--server",
+        default=_DEFAULT_SERVER,
+        metavar="URL",
+        help=(
+            f"Base URL of a running cindex serve instance to use for embedding "
+            f"(default: {_DEFAULT_SERVER}). Falls back to local model load if unreachable. "
+            f"Pass an empty string to always use the local model."
+        ),
+    )
+    similar_parser.add_argument(
         "--output",
         choices=["json", "table"],
         default="table",
@@ -111,6 +123,14 @@ def run_similar(args: argparse.Namespace) -> int:
     if cache_dir:
         cache_dir = str(Path(cache_dir).resolve())
 
+    server_url = args.server or ""
+    vector = _try_embed_via_server(args.text, server_url) if server_url else None
+    if vector is not None:
+        logger.debug("Using embedding from server: %s", server_url)
+    else:
+        if server_url:
+            logger.debug("Server unavailable (%s), falling back to local model.", server_url)
+
     try:
         rows = find_similar_vertices(
             db_path,
@@ -119,6 +139,7 @@ def run_similar(args: argparse.Namespace) -> int:
             cache_folder=cache_dir,
             k=args.k,
             label=args.label,
+            vector=vector,
         )
     except (RuntimeError, ValueError, OSError) as exc:
         logger.error(str(exc))
@@ -129,6 +150,27 @@ def run_similar(args: argparse.Namespace) -> int:
         output=args.output,
     )
     return 0
+
+
+def _try_embed_via_server(text: str, server_url: str) -> list[float] | None:
+    """POST *text* to a running cindex serve instance and return the embedding.
+
+    Returns None on any failure (server unreachable, timeout, unexpected
+    response), allowing the caller to fall back to a local model load.
+    """
+    url = server_url.rstrip("/") + "/api/embed"
+    body = json.dumps({"text": text}).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        return data["embedding"]
+    except Exception:
+        return None
 
 
 def _print_rows(columns: list[str], rows: list[dict[str, Any]], *, output: str) -> None:

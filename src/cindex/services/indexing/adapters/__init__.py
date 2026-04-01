@@ -34,7 +34,6 @@ from cindex.services.indexing.adapters.cpp import CppAdapter
 from cindex.services.indexing.adapters.ruby import RubyAdapter
 from cindex.services.indexing.adapters.php import PHPAdapter
 from cindex.services.indexing.adapters.bash import BashAdapter
-from cindex.services.indexing.adapters.lua import LuaAdapter
 from cindex.services.indexing.adapters.html import HTMLAdapter
 
 logger = logging.getLogger(__name__)
@@ -57,7 +56,6 @@ _OPTIONAL_ADAPTERS = [
     RubyAdapter,
     PHPAdapter,
     BashAdapter,
-    LuaAdapter,
     HTMLAdapter,
 ]
 
@@ -81,7 +79,6 @@ __all__ = [
     "RubyAdapter",
     "PHPAdapter",
     "BashAdapter",
-    "LuaAdapter",
     "HTMLAdapter",
     "get_adapter",
     "parse_file",

@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-url",
         default=None,
-        help="If set, execute SQL through API /query/sql instead of direct SQLite",
+        help="If set, execute SQL through API /api/query/sql instead of direct SQLite",
     )
     return parser
 
@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_via_api(api_url: str, sql: str) -> tuple[list[str], list[dict[str, object]]]:
     payload = json.dumps({"sql": sql}).encode("utf-8")
     req = urllib.request.Request(
-        f"{api_url.rstrip('/')}/query/sql",
+        f"{api_url.rstrip('/')}/api/query/sql",
         data=payload,
         method="POST",
         headers={"Content-Type": "application/json"},
