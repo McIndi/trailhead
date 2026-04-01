@@ -15,6 +15,7 @@ from cindex.services.indexing.sqlite_store import get_index_model
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_DEFAULT_DB_SUBPATH = ".cindex/db.sqlite"
 
 
 def configure_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -46,8 +47,11 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--sqlite-db",
-        required=True,
-        help="SQLite database path used by query endpoints and the browser UI.",
+        default=None,
+        help=(
+            "SQLite database path used by query endpoints and the browser UI "
+            f"(default: <directory>/{_DEFAULT_DB_SUBPATH})."
+        ),
     )
     parser.add_argument(
         "--no-preload",
@@ -100,7 +104,11 @@ def run(args: argparse.Namespace) -> int:
 
     watch_directory = str(Path(args.directory).resolve())
 
-    db_path = Path(args.sqlite_db).resolve()
+    db_path = (
+        Path(args.sqlite_db).resolve()
+        if args.sqlite_db
+        else Path(watch_directory) / _DEFAULT_DB_SUBPATH
+    )
     existing_model = get_index_model(db_path)
     if existing_model is not None and existing_model != args.model:
         logger.error(
@@ -110,7 +118,7 @@ def run(args: argparse.Namespace) -> int:
             args.model,
             existing_model,
             args.model,
-            args.sqlite_db,
+            db_path,
             existing_model,
         )
         return 1
@@ -136,7 +144,7 @@ def run(args: argparse.Namespace) -> int:
     app = create_app(
         default_model=args.model,
         cache_dir=cache_dir,
-        sqlite_db=args.sqlite_db,
+        sqlite_db=str(db_path),
         watch_directory=watch_directory,
         preload_default_model=not args.no_preload,
         run_indexer=True,

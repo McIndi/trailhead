@@ -13,6 +13,7 @@ from cindex.services.indexing.query import execute_sql_query
 from cindex.services.indexing.query import find_similar_vertices
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_DEFAULT_DB_SUBPATH = ".cindex/db.sqlite"
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,11 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Run a read-only SQL query.",
         description="Run a read-only SQL statement against the cindex SQLite database.",
     )
-    sql_parser.add_argument("--sqlite-db", required=True, help="Path to the SQLite database file.")
+    sql_parser.add_argument(
+        "--sqlite-db",
+        default=None,
+        help=f"Path to the SQLite database file (default: ./{_DEFAULT_DB_SUBPATH}).",
+    )
     sql_parser.add_argument("--sql", required=True, help="Read-only SQL statement to execute.")
     sql_parser.add_argument(
         "--output",
@@ -46,7 +51,11 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         description="Embed a text query and search the stored vertex embeddings in SQLite.",
     )
     similar_parser.add_argument("text", help="Natural-language query text.")
-    similar_parser.add_argument("--sqlite-db", required=True, help="Path to the SQLite database file.")
+    similar_parser.add_argument(
+        "--sqlite-db",
+        default=None,
+        help=f"Path to the SQLite database file (default: ./{_DEFAULT_DB_SUBPATH}).",
+    )
     similar_parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
@@ -78,7 +87,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run_sql(args: argparse.Namespace) -> int:
-    db_path = Path(args.sqlite_db).resolve()
+    db_path = Path(args.sqlite_db).resolve() if args.sqlite_db else Path.cwd() / _DEFAULT_DB_SUBPATH
     if not db_path.exists():
         logger.error("SQLite database not found: %s", db_path)
         return 1
@@ -93,7 +102,7 @@ def run_sql(args: argparse.Namespace) -> int:
 
 
 def run_similar(args: argparse.Namespace) -> int:
-    db_path = Path(args.sqlite_db).resolve()
+    db_path = Path(args.sqlite_db).resolve() if args.sqlite_db else Path.cwd() / _DEFAULT_DB_SUBPATH
     if not db_path.exists():
         logger.error("SQLite database not found: %s", db_path)
         return 1

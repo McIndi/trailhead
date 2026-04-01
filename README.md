@@ -6,8 +6,7 @@ Command-line code indexing and text embedding tool with:
 - text embeddings powered by sentence-transformers
 - polyglot code indexing powered by tree-sitter (Python built-in; 12 additional languages optional)
 - optional graph persistence in a single SQLite file
-- a smoke test suite using pytest
-- modern packaging via pyproject.toml
+- test suite using pytest
 
 ## Requirements
 
@@ -26,7 +25,7 @@ python -m pip install -e .[dev]
 
 ### Language support
 
-Python is supported out of the box. Additional languages are installed as optional extras — only the packages you install will be active; missing ones are silently skipped at startup.
+Python is supported out of the box. Additional languages are installed as optional extras. Only the packages you install will be active; missing ones are silently skipped at startup.
 
 Install individual languages:
 
@@ -42,7 +41,6 @@ pip install -e .[cpp]
 pip install -e .[ruby]
 pip install -e .[php]
 pip install -e .[bash]
-pip install -e .[lua]
 pip install -e .[html]
 ```
 
@@ -66,7 +64,6 @@ pip install -e .[all-languages]
 | `ruby` | Ruby | `.rb` |
 | `php` | PHP | `.php` |
 | `bash` | Bash / Shell | `.sh` `.bash` |
-| `lua` | Lua | `.lua` |
 | `html` | HTML | `.html` `.htm` |
 
 ## Usage
@@ -93,9 +90,43 @@ cindex embed "A short sentence to embed" --cache-dir "C:\another\cache"
 
 The command prints the embedding as a JSON array of floats.
 
-Run the warm-model API server with a background indexer. The server watches the source tree, keeps the SQLite graph fresh, and reuses the loaded embedding model across index updates:
+Index a directory of source files. The graph is persisted to `.cindex/db.sqlite` by default (smart sync: full build on first run, incremental on subsequent runs):
 
 ```powershell
+cindex index .
+```
+
+Use `--in-memory` to build the graph without writing to disk and print a summary:
+
+```powershell
+cindex index . --in-memory
+cindex index . --in-memory --output json
+```
+
+Watch for file changes and reindex incrementally (Ctrl-C to stop):
+
+```powershell
+cindex index . --watch
+cindex index . --embed-model sentence-transformers/all-MiniLM-L6-v2 --watch
+```
+
+Use a custom database path or add embeddings:
+
+```powershell
+cindex index . --sqlite-db ./.cindex/graph.db
+cindex index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
+cindex index . --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
+```
+
+When `sqlite-vector` can be loaded, `cindex` also initializes vector search for
+the `vertex_embeddings.embedding` column. If extension loading is unavailable on
+your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
+
+Run the warm-model API server with a background indexer. The server watches the source tree, keeps the SQLite graph fresh, and reuses the loaded embedding model across index updates. The database defaults to `.cindex/db.sqlite` under the watched directory:
+
+```powershell
+cindex serve .
+cindex serve . --model sentence-transformers/all-MiniLM-L6-v2
 cindex serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-MiniLM-L6-v2
 ```
 
@@ -106,51 +137,17 @@ curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"text":"hello world"}'
 ```
 
-Index a directory of source files (all installed languages are picked up automatically):
+Run a read-only SQL query against the SQLite database (defaults to `./.cindex/db.sqlite`):
 
 ```powershell
-cindex index .
-```
-
-Persist the graph into a single SQLite file:
-
-```powershell
-cindex index . --sqlite-db ./.cindex/graph.db
-```
-
-Persist graph + embeddings into the same SQLite file:
-
-```powershell
-cindex index . \
-    --sqlite-db ./.cindex/graph.db \
-    --embed-model sentence-transformers/all-MiniLM-L6-v2
-```
-
-Optional embedding cache override:
-
-```powershell
-cindex index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
-```
-
-Append to an existing SQLite graph instead of replacing it:
-
-```powershell
-cindex index . --sqlite-db ./.cindex/graph.db --append
-```
-
-When `sqlite-vector` can be loaded, `cindex` also initializes vector search for
-the `vertex_embeddings.embedding` column. If extension loading is unavailable on
-your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
-
-Run a read-only SQL query against the SQLite database:
-
-```powershell
+cindex query sql --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
 cindex query sql --sqlite-db ./.cindex/graph.db --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
 ```
 
 Run a semantic similarity query against stored vertex embeddings:
 
 ```powershell
+cindex query similar "find sqlite vector initialization code"
 cindex query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
 ```
 
