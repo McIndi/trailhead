@@ -11,7 +11,7 @@ from cindex.cli.commands.serve import configure_parser as configure_serve_parser
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="cindex",
+        prog="th",
         description="Utilities for indexing and embeddings.",
     )
 

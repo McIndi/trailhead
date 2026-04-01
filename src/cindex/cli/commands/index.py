@@ -1,4 +1,4 @@
-"""``cindex index`` — recursively index a codebase into a property graph."""
+"""``th index`` — recursively index a codebase into a property graph."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,7 @@ from cindex.services.config import is_model_allowed
 from cindex.services.indexing import LiveIndexer
 from cindex.services.indexing.graph import PropertyGraph
 from cindex.services.indexing.sqlite_store import get_index_model
+from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
 from cindex.services.indexing.walker import index_directory
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,10 @@ def run(args: argparse.Namespace) -> int:
         logger.error("--embed-model requires SQLite persistence; remove --in-memory.")
         return 1
 
+    if args.embed_model and not args.sqlite_db:
+        logger.error("--embed-model requires --sqlite-db.")
+        return 1
+
     if args.embed_model and not is_model_allowed(args.embed_model, allow_any=args.allow_any_model):
         logger.error(
             "Model '%s' is not in the allowlist. Allowed models: %s. "
@@ -139,7 +144,7 @@ def run(args: argparse.Namespace) -> int:
 
     # ------------------------------------------------------------------
     # SQLite path: use LiveIndexer for smart sync (and optionally watch).
-    # This is the same code path used by ``cindex serve``.
+    # This is the same code path used by ``th serve``.
     # ------------------------------------------------------------------
     db_path = Path(args.sqlite_db).resolve() if args.sqlite_db else root / _DEFAULT_DB_SUBPATH
 

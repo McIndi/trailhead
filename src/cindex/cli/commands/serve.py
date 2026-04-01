@@ -1,4 +1,4 @@
-"""``cindex serve`` — run a warm-model FastAPI server."""
+"""``th serve`` — run a warm-model FastAPI server."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def run(args: argparse.Namespace) -> int:
     if existing_model is not None and existing_model != args.model:
         logger.error(
             "Model mismatch: server is configured with '%s' but the index was built with '%s'. "
-            "Re-run 'cindex index --embed-model %s --sqlite-db %s' to regenerate embeddings, "
+            "Re-run 'th index --embed-model %s --sqlite-db %s' to regenerate embeddings, "
             "or pass '--model %s' to match the existing index.",
             args.model,
             existing_model,
@@ -126,7 +126,7 @@ def run(args: argparse.Namespace) -> int:
     sqlite_db_for_app = args.sqlite_db if args.sqlite_db else str(db_path_for_checks)
 
     logger.info(
-        "Starting cindex API server on %s:%d with model %s watching %s",
+        "Starting trailhead API server on %s:%d with model %s watching %s",
         args.host,
         args.port,
         args.model,

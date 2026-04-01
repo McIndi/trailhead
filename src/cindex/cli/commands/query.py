@@ -1,4 +1,4 @@
-"""``cindex query`` — query graph and vector data stored in SQLite."""
+"""``th query`` — query graph and vector data stored in SQLite."""
 
 from __future__ import annotations
 
@@ -24,14 +24,14 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "query",
         help="Query graph and vector data from a SQLite database.",
-        description="Run SQL or semantic similarity queries against the cindex SQLite database.",
+        description="Run SQL or semantic similarity queries against the trailhead SQLite database.",
     )
     query_subparsers = parser.add_subparsers(dest="query_command", required=True)
 
     sql_parser = query_subparsers.add_parser(
         "sql",
         help="Run a read-only SQL query.",
-        description="Run a read-only SQL statement against the cindex SQLite database.",
+        description="Run a read-only SQL statement against the trailhead SQLite database.",
     )
     sql_parser.add_argument(
         "--sqlite-db",
@@ -84,7 +84,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         default=_DEFAULT_SERVER,
         metavar="URL",
         help=(
-            f"Base URL of a running cindex serve instance to use for embedding "
+            f"Base URL of a running th serve instance to use for embedding "
             f"(default: {_DEFAULT_SERVER}). Falls back to local model load if unreachable. "
             f"Pass an empty string to always use the local model."
         ),
@@ -153,7 +153,7 @@ def run_similar(args: argparse.Namespace) -> int:
 
 
 def _try_embed_via_server(text: str, server_url: str) -> list[float] | None:
-    """POST *text* to a running cindex serve instance and return the embedding.
+    """POST *text* to a running th serve instance and return the embedding.
 
     Returns None on any failure (server unreachable, timeout, unexpected
     response), allowing the caller to fall back to a local model load.

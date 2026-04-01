@@ -303,7 +303,7 @@ def create_app(
     )
 
     app = FastAPI(
-        title="cindex API",
+        title="trailhead API",
         version="0.1.0",
         description="Warm-model API for embeddings and SQLite-backed code queries.",
         lifespan=_build_lifespan(config),

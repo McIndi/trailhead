@@ -1,8 +1,8 @@
-# cindex
+# trailhead
 
 Command-line code indexing and text embedding tool with:
 
-- a single CLI command: cindex
+- a single CLI command: th
 - text embeddings powered by sentence-transformers
 - polyglot code indexing powered by tree-sitter (Python built-in; 12 additional languages optional)
 - optional graph persistence in a single SQLite file
@@ -71,21 +71,21 @@ pip install -e .[all-languages]
 Generate an embedding with the embed subcommand:
 
 ```powershell
-cindex embed "A short sentence to embed"
+th embed "A short sentence to embed"
 ```
 
 Specify a model explicitly:
 
 ```powershell
-cindex embed "A short sentence to embed" --model sentence-transformers/all-mpnet-base-v2
+th embed "A short sentence to embed" --model sentence-transformers/all-mpnet-base-v2
 ```
 
 Optional cache override:
 
 ```powershell
 $env:CINDEX_CACHE_DIR = "C:\models\cache"
-cindex embed "A short sentence to embed"
-cindex embed "A short sentence to embed" --cache-dir "C:\another\cache"
+th embed "A short sentence to embed"
+th embed "A short sentence to embed" --cache-dir "C:\another\cache"
 ```
 
 The command prints the embedding as a JSON array of floats.
@@ -93,41 +93,41 @@ The command prints the embedding as a JSON array of floats.
 Index a directory of source files. The graph is persisted to `.cindex/db.sqlite` by default (smart sync: full build on first run, incremental on subsequent runs):
 
 ```powershell
-cindex index .
+th index .
 ```
 
 Use `--in-memory` to build the graph without writing to disk and print a summary:
 
 ```powershell
-cindex index . --in-memory
-cindex index . --in-memory --output json
+th index . --in-memory
+th index . --in-memory --output json
 ```
 
 Watch for file changes and reindex incrementally (Ctrl-C to stop):
 
 ```powershell
-cindex index . --watch
-cindex index . --embed-model sentence-transformers/all-MiniLM-L6-v2 --watch
+th index . --watch
+th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --watch
 ```
 
 Use a custom database path or add embeddings:
 
 ```powershell
-cindex index . --sqlite-db ./.cindex/graph.db
-cindex index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
-cindex index . --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
+th index . --sqlite-db ./.cindex/graph.db
+th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
+th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
 ```
 
-When `sqlite-vector` can be loaded, `cindex` also initializes vector search for
+When `sqlite-vector` can be loaded, `trailhead` also initializes vector search for
 the `vertex_embeddings.embedding` column. If extension loading is unavailable on
 your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
 
 Run the warm-model API server with a background indexer. The server watches the source tree, keeps the SQLite graph fresh, and reuses the loaded embedding model across index updates. The database defaults to `.cindex/db.sqlite` under the watched directory:
 
 ```powershell
-cindex serve .
-cindex serve . --model sentence-transformers/all-MiniLM-L6-v2
-cindex serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-MiniLM-L6-v2
+th serve .
+th serve . --model sentence-transformers/all-MiniLM-L6-v2
+th serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-MiniLM-L6-v2
 ```
 
 Then call the API from another terminal:
@@ -140,15 +140,15 @@ curl -X POST http://127.0.0.1:8000/api/embed -H "Content-Type: application/json"
 Run a read-only SQL query against the SQLite database (defaults to `./.cindex/db.sqlite`):
 
 ```powershell
-cindex query sql --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
-cindex query sql --sqlite-db ./.cindex/graph.db --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
+th query sql --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
+th query sql --sqlite-db ./.cindex/graph.db --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
 ```
 
 Run a semantic similarity query against stored vertex embeddings:
 
 ```powershell
-cindex query similar "find sqlite vector initialization code"
-cindex query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
+th query similar "find sqlite vector initialization code"
+th query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
 ```
 
 The same semantic query is also available over HTTP once the server is running. The server owns the configured SQLite database path, so the browser or API client only sends the query payload:
@@ -160,7 +160,7 @@ curl "http://127.0.0.1:8000/api/query/similar?text=find%20sqlite%20vector%20init
 Limit the search to a specific vertex label and format the output as JSON:
 
 ```powershell
-cindex query similar "graph persistence" --sqlite-db ./.cindex/graph.db --label function --k 5 --output json
+th query similar "graph persistence" --sqlite-db ./.cindex/graph.db --label function --k 5 --output json
 ```
 
 Search graph vertices over HTTP:
@@ -175,10 +175,10 @@ Traverse a local subgraph from a known vertex id:
 curl "http://127.0.0.1:8000/api/graph/traverse?vertex_id=<vertex-id>&direction=both&depth=1"
 ```
 
-You can also run the module directly:
+Run the installed command directly:
 
 ```powershell
-python -m cindex embed "A short sentence to embed"
+th embed "A short sentence to embed"
 ```
 
 ## Tests
@@ -289,7 +289,7 @@ class KotlinAdapter(LanguageAdapter):
 from cindex.services.indexing.adapters import register
 register(KotlinAdapter())
 
-# 3. Done — cindex index, serve, and query all pick it up automatically.
+# 3. Done — th index, serve, and query all pick it up automatically.
 ```
 
 What each adapter should produce:
