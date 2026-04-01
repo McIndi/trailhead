@@ -168,7 +168,11 @@ def _handle_func_decl(node, graph: PropertyGraph, module_v: Vertex, class_v: Ver
     if name_node is None:
         return
     owner = class_v if class_v is not None else module_v
-    _add_function(node, _node_text(name_node, src), owner, module_v, graph, src)
+    func_v = _add_function(node, _node_text(name_node, src), owner, module_v, graph, src)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, func_v, src)
 
 
 def _handle_var_declarator(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
@@ -179,7 +183,11 @@ def _handle_var_declarator(node, graph: PropertyGraph, module_v: Vertex, class_v
     if value_node.type not in _FUNC_VAL_TYPES:
         return
     owner = class_v if class_v is not None else module_v
-    _add_function(value_node, _node_text(name_node, src), owner, module_v, graph, src)
+    func_v = _add_function(value_node, _node_text(name_node, src), owner, module_v, graph, src)
+    body = value_node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, func_v, src)
 
 
 def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
@@ -206,14 +214,19 @@ def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> N
                     _handle_var_declarator(sub, graph, module_v, class_v, src)
 
 
-def _handle_method(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex, src: bytes) -> None:
+def _handle_method(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
-    _add_function(node, _node_text(name_node, src), class_v, module_v, graph, src)
+        return None
+    func_v = _add_function(node, _node_text(name_node, src), class_v, module_v, graph, src)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, func_v, src)
+    return func_v
 
 
-def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: PropertyGraph, src: bytes) -> None:
+def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: PropertyGraph, src: bytes) -> Vertex:
     func_v = graph.add_vertex(
         "function",
         name=name,
@@ -223,6 +236,7 @@ def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: Prope
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
+    return func_v
 
 
 def _handle_import(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

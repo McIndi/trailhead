@@ -96,11 +96,21 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None,
 
     elif t == "function_definition":
         owner = class_v if class_v is not None else module_v
-        _handle_function(node, graph, module_v, owner, src)
+        func_v = _handle_function(node, graph, module_v, owner, src)
+        if func_v is not None:
+            body = node.child_by_field_name("body")
+            if body is not None:
+                for child in body.children:
+                    _visit(child, graph, module_v, func_v, src)
 
     elif t == "method_declaration":
         owner = class_v if class_v is not None else module_v
-        _handle_function(node, graph, module_v, owner, src)
+        func_v = _handle_function(node, graph, module_v, owner, src)
+        if func_v is not None:
+            body = node.child_by_field_name("body")
+            if body is not None:
+                for child in body.children:
+                    _visit(child, graph, module_v, func_v, src)
 
     elif t == "namespace_use_declaration":
         _handle_use(node, graph, module_v, src)
@@ -136,13 +146,18 @@ def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> N
         return
     for child in body.children:
         if child.type == "method_declaration":
-            _handle_function(child, graph, module_v, class_v, src)
+            func_v = _handle_function(child, graph, module_v, class_v, src)
+            if func_v is not None:
+                fn_body = child.child_by_field_name("body")
+                if fn_body is not None:
+                    for fn_child in fn_body.children:
+                        _visit(fn_child, graph, module_v, func_v, src)
 
 
-def _handle_function(node, graph: PropertyGraph, module_v: Vertex, owner: Vertex, src: bytes) -> None:
+def _handle_function(node, graph: PropertyGraph, module_v: Vertex, owner: Vertex, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
+        return None
     func_v = graph.add_vertex(
         "function",
         name=_node_text(name_node, src),
@@ -152,6 +167,7 @@ def _handle_function(node, graph: PropertyGraph, module_v: Vertex, owner: Vertex
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
+    return func_v
 
 
 def _handle_use(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

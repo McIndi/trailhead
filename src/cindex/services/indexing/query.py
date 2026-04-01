@@ -34,8 +34,14 @@ def find_similar_vertices(
     cache_folder: str | None = None,
     k: int = 10,
     label: str | None = None,
+    exclude_external: bool = True,
 ) -> list[dict[str, Any]]:
-    """Return the nearest stored vertices to *query_text*."""
+    """Return the nearest stored vertices to *query_text*.
+
+    By default external import vertices are excluded from results since they
+    carry no source location and are rarely useful in search output.  Pass
+    ``exclude_external=False`` to include them.
+    """
     if k < 1:
         raise ValueError("k must be at least 1")
 
@@ -56,32 +62,34 @@ def find_similar_vertices(
         )
         query_blob = vector_to_blob(vector)
 
-        where_clause = "WHERE v.label = ?" if label else ""
-        params: tuple[Any, ...]
+        clauses: list[str] = []
+        params: list[Any] = [query_blob]
         if label:
-            params = (query_blob, label)
-        else:
-            params = (query_blob,)
+            clauses.append("v.label = ?")
+            params.append(label)
+        if exclude_external:
+            clauses.append("v.label != 'external'")
+        where_clause = ("WHERE " + " AND ".join(clauses)) if clauses else ""
 
         sql = f"""
         SELECT
           v.id AS vertex_id,
           v.label,
-          json_extract(v.properties_json, '$.name') AS name,
-          json_extract(v.properties_json, '$.path') AS path,
-          json_extract(v.properties_json, '$.line') AS line,
-                    json_extract(v.properties_json, '$.docstring') AS docstring,
-                    json_extract(v.properties_json, '$.source') AS source,
+          v.name,
+          v.path,
+          v.line,
+          json_extract(v.properties_json, '$.docstring') AS docstring,
+          json_extract(v.properties_json, '$.source') AS source,
           ve.model_name,
           nn.distance
-                FROM vector_full_scan('vertex_embeddings', 'embedding', ?, {k}) AS nn
+        FROM vector_full_scan('vertex_embeddings', 'embedding', ?, {k}) AS nn
         JOIN vertex_embeddings ve ON ve.rowid = nn.rowid
         JOIN vertices v ON v.id = ve.vertex_id
         {where_clause}
         ORDER BY nn.distance
-                LIMIT {k}
+        LIMIT {k}
         """
-        return [dict(row) for row in conn.execute(sql, params).fetchall()]
+        return [dict(row) for row in conn.execute(sql, tuple(params)).fetchall()]
 
 
 def _load_sqlite_vector_extension(conn: sqlite3.Connection) -> None:

@@ -75,7 +75,7 @@ class GoAdapter(LanguageAdapter):
 
 # ── AST visitors ──────────────────────────────────────────────────────────────
 
-def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes, scope_v: Vertex | None = None) -> None:
     t = node.type
 
     if t == "function_declaration":
@@ -92,13 +92,13 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
 
     else:
         for child in node.children:
-            _visit(child, graph, module_v, src)
+            _visit(child, graph, module_v, src, scope_v=scope_v)
 
 
-def _handle_func(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _handle_func(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
+        return None
     func_v = graph.add_vertex(
         "function",
         name=_node_text(name_node, src),
@@ -108,12 +108,17 @@ def _handle_func(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> No
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("defines", module_v, func_v)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, src, scope_v=func_v)
+    return func_v
 
 
-def _handle_method(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _handle_method(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
+        return None
 
     receiver_type = _receiver_type_name(node, src)
     if receiver_type:
@@ -130,6 +135,11 @@ def _handle_method(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> 
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, src, scope_v=func_v)
+    return func_v
 
 
 def _handle_type_decl(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

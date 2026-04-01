@@ -80,7 +80,7 @@ class HTMLAdapter(LanguageAdapter):
 
 # ── AST visitors ──────────────────────────────────────────────────────────────
 
-def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes, scope_v: Vertex | None = None) -> None:
     t = node.type
 
     if t in ("element", "script_element", "style_element"):
@@ -100,6 +100,10 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
                     source=f"<{tag} id=\"{elem_id}\">",
                 )
                 graph.add_edge("defines", module_v, func_v)
+                # Recurse into element children with func_v as scope
+                for child in node.children:
+                    _visit(child, graph, module_v, src, scope_v=func_v)
+                return
 
             # Resource dependency → external vertex
             if tag == "script":
@@ -113,11 +117,11 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
 
         # Recurse into element children
         for child in node.children:
-            _visit(child, graph, module_v, src)
+            _visit(child, graph, module_v, src, scope_v=scope_v)
 
     else:
         for child in node.children:
-            _visit(child, graph, module_v, src)
+            _visit(child, graph, module_v, src, scope_v=scope_v)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

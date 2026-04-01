@@ -160,12 +160,13 @@ def _visit(
 
     elif t in ("function_definition", "async_function_definition"):
         owner = class_v if class_v is not None else module_v
-        _handle_function(node, graph, module_v, owner, source)
-        # Recursively visit the function body to find nested imports and functions
+        func_v = _handle_function(node, graph, module_v, owner, source)
+        # Recurse the function body with func_v as the enclosing scope so that
+        # nested functions are attached to their enclosing function, not the module.
         body = node.child_by_field_name("body")
         if body:
             for child in body.children:
-                _visit(child, graph, module_v, owner, source)
+                _visit(child, graph, module_v, func_v, source)
 
     elif t in ("import_statement", "import_from_statement"):
         _handle_import(node, graph, module_v, source)
@@ -205,20 +206,19 @@ def _handle_class(
     if body:
         for child in body.children:
             if child.type in ("function_definition", "async_function_definition"):
-                _handle_function(child, graph, module_v, class_v, source)
-                # Recursively visit the function body for nested imports/functions
+                func_v = _handle_function(child, graph, module_v, class_v, source)
                 func_body = child.child_by_field_name("body")
                 if func_body:
                     for subchild in func_body.children:
-                        _visit(subchild, graph, module_v, class_v, source)
+                        _visit(subchild, graph, module_v, func_v, source)
             elif child.type == "decorated_definition":
                 for subchild in child.children:
                     if subchild.type in ("function_definition", "async_function_definition"):
-                        _handle_function(subchild, graph, module_v, class_v, source)
+                        func_v = _handle_function(subchild, graph, module_v, class_v, source)
                         func_body = subchild.child_by_field_name("body")
                         if func_body:
                             for subsubchild in func_body.children:
-                                _visit(subsubchild, graph, module_v, class_v, source)
+                                _visit(subsubchild, graph, module_v, func_v, source)
 
 
 def _handle_function(
@@ -227,7 +227,7 @@ def _handle_function(
     module_v: Vertex,
     owner: Vertex,
     source: bytes,
-) -> None:
+) -> Vertex:
     name_node = node.child_by_field_name("name")
     name = _text(name_node, source) if name_node else "<unknown>"
 
@@ -245,7 +245,7 @@ def _handle_function(
     func_v = graph.add_vertex(LABEL_FUNCTION, **func_props)
     edge_label = EDGE_HAS_METHOD if owner.label == LABEL_CLASS else EDGE_DEFINES
     graph.add_edge(edge_label, owner, func_v)
-    # Function body recursion is now handled in _visit to detect late imports and nested functions.
+    return func_v
 
 
 def _handle_import(

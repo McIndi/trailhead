@@ -78,7 +78,7 @@ class CAdapter(LanguageAdapter):
 
 # ── AST visitors ──────────────────────────────────────────────────────────────
 
-def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes, scope_v: Vertex | None = None) -> None:
     t = node.type
 
     if t == "function_definition":
@@ -98,14 +98,14 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
 
     else:
         for child in node.children:
-            _visit(child, graph, module_v, src)
+            _visit(child, graph, module_v, src, scope_v=scope_v)
 
 
-def _handle_function(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _handle_function(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> Vertex | None:
     decl = node.child_by_field_name("declarator")
     name = _extract_decl_name(decl, src) if decl is not None else None
     if not name:
-        return
+        return None
     func_v = graph.add_vertex(
         "function",
         name=name,
@@ -115,6 +115,11 @@ def _handle_function(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("defines", module_v, func_v)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, src, scope_v=func_v)
+    return func_v
 
 
 def _handle_struct(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

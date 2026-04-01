@@ -84,7 +84,12 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None,
     t = node.type
 
     if t == "function_definition":
-        _handle_function(node, graph, module_v, class_v, src)
+        func_v = _handle_function(node, graph, module_v, class_v, src)
+        if func_v is not None:
+            body = node.child_by_field_name("body")
+            if body is not None:
+                for child in body.children:
+                    _visit(child, graph, module_v, func_v, src)
 
     elif t in _CLASS_LIKE_TYPES:
         _handle_class(node, graph, module_v, src)
@@ -109,11 +114,11 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None,
             _visit(child, graph, module_v, class_v, src)
 
 
-def _handle_function(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
+def _handle_function(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> Vertex | None:
     decl = node.child_by_field_name("declarator")
     name = _extract_decl_name(decl, src) if decl is not None else None
     if not name:
-        return
+        return None
     owner = class_v if class_v is not None else module_v
     func_v = graph.add_vertex(
         "function",
@@ -124,6 +129,7 @@ def _handle_function(node, graph: PropertyGraph, module_v: Vertex, class_v: Vert
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
+    return func_v
 
 
 def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
@@ -146,7 +152,12 @@ def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> N
         return
     for child in body.children:
         if child.type == "function_definition":
-            _handle_function(child, graph, module_v, class_v, src)
+            func_v = _handle_function(child, graph, module_v, class_v, src)
+            if func_v is not None:
+                fn_body = child.child_by_field_name("body")
+                if fn_body is not None:
+                    for fn_child in fn_body.children:
+                        _visit(fn_child, graph, module_v, func_v, src)
         elif child.type in _CLASS_LIKE_TYPES:
             _handle_class(child, graph, module_v, src)
 

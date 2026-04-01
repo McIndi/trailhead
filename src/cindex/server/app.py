@@ -258,6 +258,7 @@ def create_app(
         text: str = Query(max_length=2_000),
         k: int = Query(default=10, ge=1, le=100),
         label: str = Query(default=None, max_length=100),
+        include_external: bool = Query(default=False),
     ) -> dict[str, object]:
         """
         Perform a semantic similarity search for code symbols.
@@ -278,6 +279,7 @@ def create_app(
                 cache_folder=cache_dir,
                 k=k,
                 label=label,
+                exclude_external=not include_external,
             )
         except (ValueError, RuntimeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -291,6 +293,7 @@ def create_app(
         label: str = Query(default=None, max_length=100),
         path_contains: str = Query(default=None, max_length=500),
         limit: int = Query(default=20, ge=1, le=200),
+        include_external: bool = Query(default=False),
     ) -> dict[str, object]:
         """
         Search for code vertices (modules, classes, functions, etc.) in the code index.
@@ -311,6 +314,7 @@ def create_app(
                 label=label,
                 path_contains=path_contains,
                 limit=limit,
+                exclude_external=not include_external,
             )
         except (ValueError, RuntimeError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

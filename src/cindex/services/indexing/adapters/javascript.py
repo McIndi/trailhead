@@ -84,12 +84,24 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None,
     t = node.type
 
     if t in _FUNC_DECL_TYPES:
-        _handle_func_decl(node, graph, module_v, class_v, src)
+        func_v = _handle_func_decl(node, graph, module_v, class_v, src)
+        if func_v is not None:
+            body = node.child_by_field_name("body")
+            if body is not None:
+                for child in body.children:
+                    _visit(child, graph, module_v, func_v, src)
 
     elif t in ("lexical_declaration", "variable_declaration"):
         for child in node.children:
             if child.type == "variable_declarator":
-                _handle_var_declarator(child, graph, module_v, class_v, src)
+                func_v = _handle_var_declarator(child, graph, module_v, class_v, src)
+                if func_v is not None:
+                    value_node = child.child_by_field_name("value")
+                    if value_node is not None:
+                        body = value_node.child_by_field_name("body")
+                        if body is not None:
+                            for bchild in body.children:
+                                _visit(bchild, graph, module_v, func_v, src)
 
     elif t == "class_declaration":
         _handle_class(node, graph, module_v, src)
@@ -108,23 +120,23 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None,
             _visit(child, graph, module_v, class_v, src)
 
 
-def _handle_func_decl(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
+def _handle_func_decl(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
+        return None
     owner = class_v if class_v is not None else module_v
-    _add_function(node, _node_text(name_node, src), owner, module_v, graph, src)
+    return _add_function(node, _node_text(name_node, src), owner, module_v, graph, src)
 
 
-def _handle_var_declarator(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> None:
+def _handle_var_declarator(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex | None, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     value_node = node.child_by_field_name("value")
     if name_node is None or value_node is None:
-        return
+        return None
     if value_node.type not in _FUNC_VAL_TYPES:
-        return
+        return None
     owner = class_v if class_v is not None else module_v
-    _add_function(value_node, _node_text(name_node, src), owner, module_v, graph, src)
+    return _add_function(value_node, _node_text(name_node, src), owner, module_v, graph, src)
 
 
 def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
@@ -150,14 +162,14 @@ def _handle_class(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> N
                     _handle_var_declarator(sub, graph, module_v, class_v, src)
 
 
-def _handle_method(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex, src: bytes) -> None:
+def _handle_method(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
-    _add_function(node, _node_text(name_node, src), class_v, module_v, graph, src)
+        return None
+    return _add_function(node, _node_text(name_node, src), class_v, module_v, graph, src)
 
 
-def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: PropertyGraph, src: bytes) -> None:
+def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: PropertyGraph, src: bytes) -> Vertex:
     func_v = graph.add_vertex(
         "function",
         name=name,
@@ -167,6 +179,7 @@ def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: Prope
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
+    return func_v
 
 
 def _handle_import(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

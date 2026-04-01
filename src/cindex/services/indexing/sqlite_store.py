@@ -25,7 +25,11 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS vertices (
   id TEXT PRIMARY KEY,
   label TEXT NOT NULL,
-  properties_json TEXT NOT NULL
+  properties_json TEXT NOT NULL,
+  name TEXT GENERATED ALWAYS AS (json_extract(properties_json, '$.name')) VIRTUAL,
+  path TEXT GENERATED ALWAYS AS (COALESCE(json_extract(properties_json, '$.path'), '')) VIRTUAL,
+  line INTEGER GENERATED ALWAYS AS (json_extract(properties_json, '$.line')) VIRTUAL,
+  complexity INTEGER GENERATED ALWAYS AS (json_extract(properties_json, '$.complexity')) VIRTUAL
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -53,12 +57,35 @@ CREATE TABLE IF NOT EXISTS indexed_files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vertices_label ON vertices(label);
+CREATE INDEX IF NOT EXISTS idx_vertices_label_name ON vertices(label, name);
+CREATE INDEX IF NOT EXISTS idx_vertices_name ON vertices(name);
+CREATE INDEX IF NOT EXISTS idx_vertices_path ON vertices(path);
 CREATE INDEX IF NOT EXISTS idx_edges_label ON edges(label);
 CREATE INDEX IF NOT EXISTS idx_edges_out_v ON edges(out_v_id);
 CREATE INDEX IF NOT EXISTS idx_edges_in_v ON edges(in_v_id);
 CREATE INDEX IF NOT EXISTS idx_vertex_embeddings_model ON vertex_embeddings(model_name);
 CREATE INDEX IF NOT EXISTS idx_indexed_files_mtime ON indexed_files(mtime_ns);
 """
+
+# Applied once to databases created before generated columns were added.
+_MIGRATION_SQL = [
+    "ALTER TABLE vertices ADD COLUMN name TEXT GENERATED ALWAYS AS (json_extract(properties_json, '$.name')) VIRTUAL",
+    "ALTER TABLE vertices ADD COLUMN path TEXT GENERATED ALWAYS AS (COALESCE(json_extract(properties_json, '$.path'), '')) VIRTUAL",
+    "ALTER TABLE vertices ADD COLUMN line INTEGER GENERATED ALWAYS AS (json_extract(properties_json, '$.line')) VIRTUAL",
+    "ALTER TABLE vertices ADD COLUMN complexity INTEGER GENERATED ALWAYS AS (json_extract(properties_json, '$.complexity')) VIRTUAL",
+    "CREATE INDEX IF NOT EXISTS idx_vertices_label_name ON vertices(label, name)",
+    "CREATE INDEX IF NOT EXISTS idx_vertices_name ON vertices(name)",
+    "CREATE INDEX IF NOT EXISTS idx_vertices_path ON vertices(path)",
+]
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply schema migrations that cannot be expressed in CREATE TABLE IF NOT EXISTS."""
+    for sql in _MIGRATION_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass  # column/index already exists
 
 _META_EMBEDDING_MODEL = "embedding_model"
 
@@ -73,6 +100,7 @@ def get_index_model(db_path: Path) -> str | None:
         return None
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
         row = conn.execute(
             "SELECT value FROM meta WHERE key = ?", (_META_EMBEDDING_MODEL,)
         ).fetchone()
@@ -104,6 +132,7 @@ def persist_graph(
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
 
         if not append:
             conn.execute("DELETE FROM edges")
@@ -170,6 +199,7 @@ def persist_vertex_embeddings(
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
 
         if not append:
             conn.execute("DELETE FROM vertex_embeddings")
@@ -210,6 +240,7 @@ def load_graph(db_path: Path) -> PropertyGraph:
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
 
         vertex_rows = conn.execute(
             "SELECT id, label, properties_json FROM vertices"
@@ -255,6 +286,7 @@ def persist_indexed_files(root: Path, db_path: Path, *, append: bool = False) ->
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
         if not append:
             conn.execute("DELETE FROM indexed_files")
 
@@ -276,6 +308,7 @@ def get_indexed_files(db_path: Path) -> dict[str, int]:
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
         rows = conn.execute("SELECT path, mtime_ns FROM indexed_files").fetchall()
 
     return {str(path): int(mtime_ns) for path, mtime_ns in rows}
@@ -296,6 +329,7 @@ def reindex_file(
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.executescript(SCHEMA_SQL)
+        _run_migrations(conn)
 
         _delete_vertices_for_path(conn, str(resolved_path))
 
@@ -322,7 +356,7 @@ def reindex_file(
         )
 
         vertex_count = conn.execute(
-            "SELECT COUNT(*) FROM vertices WHERE json_extract(properties_json, '$.path') = ?",
+            "SELECT COUNT(*) FROM vertices WHERE path = ?",
             (str(resolved_path),),
         ).fetchone()[0]
 

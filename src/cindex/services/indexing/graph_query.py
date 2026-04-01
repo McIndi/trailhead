@@ -16,8 +16,13 @@ def search_vertices(
     label: str | None = None,
     path_contains: str | None = None,
     limit: int = 20,
+    exclude_external: bool = True,
 ) -> list[dict[str, Any]]:
-    """Find vertices by simple property filters."""
+    """Find vertices by simple property filters.
+
+    External import vertices are excluded by default; pass
+    ``exclude_external=False`` to include them.
+    """
     if limit < 1:
         raise ValueError("limit must be at least 1")
     if name and len(name) > 200:
@@ -27,23 +32,26 @@ def search_vertices(
     if path_contains and len(path_contains) > 500:
         raise ValueError("path filter must be 500 characters or fewer")
 
-    clauses = ["1 = 1"]
+    clauses: list[str] = []
     params: list[Any] = []
+    if exclude_external and not label:
+        clauses.append("label != 'external'")
     if name:
-        clauses.append("json_extract(properties_json, '$.name') LIKE ?")
+        clauses.append("name LIKE ?")
         params.append(f"%{name}%")
     if label:
         clauses.append("label = ?")
         params.append(label)
     if path_contains:
-        clauses.append("COALESCE(json_extract(properties_json, '$.path'), '') LIKE ?")
+        clauses.append("path LIKE ?")
         params.append(f"%{path_contains}%")
 
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = f"""
     SELECT id, label, properties_json
     FROM vertices
-    WHERE {' AND '.join(clauses)}
-    ORDER BY label, COALESCE(json_extract(properties_json, '$.path'), ''), COALESCE(json_extract(properties_json, '$.line'), 0), COALESCE(json_extract(properties_json, '$.name'), id)
+    {where}
+    ORDER BY label, path, COALESCE(line, 0), COALESCE(name, id)
     LIMIT {limit}
     """
 

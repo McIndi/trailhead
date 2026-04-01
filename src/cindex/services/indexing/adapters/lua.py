@@ -71,7 +71,7 @@ class LuaAdapter(LanguageAdapter):
 
 # ── AST visitors ──────────────────────────────────────────────────────────────
 
-def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes, scope_v: Vertex | None = None) -> None:
     t = node.type
 
     if t == "function_declaration":
@@ -93,21 +93,29 @@ def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
 
     else:
         for child in node.children:
-            _visit(child, graph, module_v, src)
+            _visit(child, graph, module_v, src, scope_v=scope_v)
 
 
 def _handle_named_func(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return
-    _add_function(node, _node_text(name_node, src), graph, module_v, src)
+    func_v = _add_function(node, _node_text(name_node, src), graph, module_v, src)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, src, scope_v=func_v)
 
 
 def _handle_local_func(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return
-    _add_function(node, _node_text(name_node, src), graph, module_v, src)
+    func_v = _add_function(node, _node_text(name_node, src), graph, module_v, src)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, src, scope_v=func_v)
 
 
 def _handle_assignment(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
@@ -123,7 +131,11 @@ def _handle_assignment(node, graph: PropertyGraph, module_v: Vertex, src: bytes)
                 if var.type not in (",",):
                     name = _node_text(var, src).strip()
                     if name:
-                        _add_function(exp, name, graph, module_v, src)
+                        func_v = _add_function(exp, name, graph, module_v, src)
+                        body = exp.child_by_field_name("body")
+                        if body is not None:
+                            for child in body.children:
+                                _visit(child, graph, module_v, src, scope_v=func_v)
                     break
             break
 
@@ -158,10 +170,14 @@ def _handle_local_assignment(node, graph: PropertyGraph, module_v: Vertex, src: 
 
     for i, func in enumerate(func_nodes):
         if i < len(names):
-            _add_function(func, names[i], graph, module_v, src)
+            func_v = _add_function(func, names[i], graph, module_v, src)
+            body = func.child_by_field_name("body")
+            if body is not None:
+                for child in body.children:
+                    _visit(child, graph, module_v, src, scope_v=func_v)
 
 
-def _add_function(node, name: str, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _add_function(node, name: str, graph: PropertyGraph, module_v: Vertex, src: bytes) -> Vertex:
     func_v = graph.add_vertex(
         "function",
         name=name,
@@ -171,6 +187,7 @@ def _add_function(node, name: str, graph: PropertyGraph, module_v: Vertex, src: 
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("defines", module_v, func_v)
+    return func_v
 
 
 def _handle_call(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

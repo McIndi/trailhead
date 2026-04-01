@@ -66,21 +66,21 @@ class BashAdapter(LanguageAdapter):
 
 # ── AST visitors ──────────────────────────────────────────────────────────────
 
-def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _visit(node, graph: PropertyGraph, module_v: Vertex, src: bytes, scope_v: Vertex | None = None) -> None:
     if node.type == "function_definition":
         _handle_function(node, graph, module_v, src)
     else:
         for child in node.children:
-            _visit(child, graph, module_v, src)
+            _visit(child, graph, module_v, src, scope_v=scope_v)
 
 
-def _handle_function(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
+def _handle_function(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> Vertex | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
-        return
+        return None
     name = _node_text(name_node, src).strip()
     if not name:
-        return
+        return None
     func_v = graph.add_vertex(
         "function",
         name=name,
@@ -90,3 +90,8 @@ def _handle_function(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -
         complexity=_complexity(node, _BRANCHING),
     )
     graph.add_edge("defines", module_v, func_v)
+    body = node.child_by_field_name("body")
+    if body is not None:
+        for child in body.children:
+            _visit(child, graph, module_v, src, scope_v=func_v)
+    return func_v
