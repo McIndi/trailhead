@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from cindex.services.embeddings import clear_embedding_model_cache
+from trailhead.services.embeddings import clear_embedding_model_cache
 
 
 @pytest.fixture(autouse=True)

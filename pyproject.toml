@@ -55,7 +55,7 @@ all-languages = [
 ]
 
 [project.scripts]
-th = "cindex.cli:main"
+th = "trailhead.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -64,7 +64,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = { attr = "cindex.__version__" }
+version = { attr = "trailhead.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]

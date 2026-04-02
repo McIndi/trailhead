@@ -8,7 +8,7 @@ import pytest
 
 class TestExecuteSqlQuery:
     def test_execute_sql_query_returns_columns_and_rows(self, tmp_path):
-        from cindex.services.indexing.query import execute_sql_query
+        from trailhead.services.indexing.query import execute_sql_query
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -21,7 +21,7 @@ class TestExecuteSqlQuery:
         assert rows == [{"id": 1, "name": "alpha"}]
 
     def test_execute_sql_query_rejects_write_statement(self, tmp_path):
-        from cindex.services.indexing.query import execute_sql_query
+        from trailhead.services.indexing.query import execute_sql_query
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -32,7 +32,7 @@ class TestExecuteSqlQuery:
 
     def test_execute_sql_query_rejects_write_with_comment_prefix(self, tmp_path):
         """Regression: comment-prefixed write statements must not bypass the read-only guard."""
-        from cindex.services.indexing.query import execute_sql_query
+        from trailhead.services.indexing.query import execute_sql_query
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -44,7 +44,7 @@ class TestExecuteSqlQuery:
 
 class TestGraphQueries:
     def test_search_vertices_filters_rows(self, tmp_path):
-        from cindex.services.indexing.graph_query import search_vertices
+        from trailhead.services.indexing.graph_query import search_vertices
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -67,7 +67,7 @@ class TestGraphQueries:
         assert rows[0]["name"] == "alpha_fn"
 
     def test_traverse_graph_includes_docstring_and_source(self, tmp_path):
-        from cindex.services.indexing.graph_query import traverse_graph
+        from trailhead.services.indexing.graph_query import traverse_graph
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -89,7 +89,7 @@ class TestGraphQueries:
         assert fn["source"] == "def fn(): pass"
 
     def test_traverse_graph_returns_neighbors(self, tmp_path):
-        from cindex.services.indexing.graph_query import traverse_graph
+        from trailhead.services.indexing.graph_query import traverse_graph
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -129,7 +129,7 @@ class TestGraphQueries:
 
 class TestFindSimilarVertices:
     def test_find_similar_vertices_returns_ranked_rows(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.query import find_similar_vertices
+        from trailhead.services.indexing.query import find_similar_vertices
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -173,7 +173,7 @@ class TestFindSimilarVertices:
             )
 
         monkeypatch.setattr(
-            "cindex.services.indexing.query.generate_embedding",
+            "trailhead.services.indexing.query.generate_embedding",
             lambda text, model_name, cache_folder=None: [0.1, 0.2, 0.3],
         )
 
@@ -193,7 +193,7 @@ class TestFindSimilarVertices:
 
 class TestQueryCommand:
     def test_query_sql_command_prints_json(self, tmp_path, capsys):
-        from cindex.cli import app as cli
+        from trailhead.cli import app as cli
 
         db = tmp_path / "query.db"
         with sqlite3.connect(db) as conn:
@@ -217,13 +217,13 @@ class TestQueryCommand:
         assert '"name": "alpha"' in capsys.readouterr().out
 
     def test_query_similar_command_prints_json(self, tmp_path, monkeypatch, capsys):
-        from cindex.cli import app as cli
+        from trailhead.cli import app as cli
 
         db = tmp_path / "query.db"
         db.touch()
 
         monkeypatch.setattr(
-            "cindex.cli.commands.query.find_similar_vertices",
+            "trailhead.cli.commands.query.find_similar_vertices",
             lambda *args, **kwargs: [
                 {
                     "vertex_id": "v1",

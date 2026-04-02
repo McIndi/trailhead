@@ -1,4 +1,4 @@
-from cindex import cli
+from trailhead import cli
 
 
 def test_main_smoke(monkeypatch, capsys, caplog) -> None:
@@ -13,7 +13,7 @@ def test_main_smoke(monkeypatch, capsys, caplog) -> None:
         return [0.1, 0.2, 0.3]
 
     monkeypatch.setattr(
-        "cindex.cli.commands.embed.generate_embedding",
+        "trailhead.cli.commands.embed.generate_embedding",
         fake_generate_embedding,
     )
     monkeypatch.delenv("CINDEX_CACHE_DIR", raising=False)

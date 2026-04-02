@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 class TestModelStore:
     def test_get_embedding_model_reuses_loaded_instance(self, monkeypatch):
-        from cindex.services.embeddings import get_embedding_model
+        from trailhead.services.embeddings import get_embedding_model
 
         created: list[tuple[str, str | None]] = []
 
@@ -35,7 +35,7 @@ class TestModelStore:
 
 class TestRenderUiTemplate:
     def test_substitutes_both_placeholders(self):
-        from cindex.server.app import _render_ui_template
+        from trailhead.server.app import _render_ui_template
 
         result = _render_ui_template(
             "model={{DEFAULT_MODEL}} db={{SQLITE_DB}}",
@@ -45,7 +45,7 @@ class TestRenderUiTemplate:
 
     def test_no_double_substitution_when_value_contains_other_placeholder(self):
         """A model name containing {{SQLITE_DB}} must not cause the db path to appear."""
-        from cindex.server.app import _render_ui_template
+        from trailhead.server.app import _render_ui_template
 
         result = _render_ui_template(
             "model={{DEFAULT_MODEL}} db={{SQLITE_DB}}",
@@ -58,14 +58,14 @@ class TestRenderUiTemplate:
 
 class TestRateLimit:
     def test_requests_within_limit_succeed(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         client = TestClient(create_app(preload_default_model=False, rate_limit=5))
         for _ in range(5):
             assert client.get("/api/health").status_code == 200
 
     def test_requests_over_limit_receive_429(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         client = TestClient(create_app(preload_default_model=False, rate_limit=3))
         responses = [client.get("/api/health").status_code for _ in range(5)]
@@ -73,7 +73,7 @@ class TestRateLimit:
         assert 429 in responses[3:]
 
     def test_rate_limit_zero_disables_limiting(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         client = TestClient(create_app(preload_default_model=False, rate_limit=0))
         for _ in range(10):
@@ -82,14 +82,14 @@ class TestRateLimit:
 
 class TestCors:
     def test_cors_headers_absent_without_configuration(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         client = TestClient(create_app(preload_default_model=False))
         response = client.get("/api/health", headers={"Origin": "http://evil.example.com"})
         assert "access-control-allow-origin" not in response.headers
 
     def test_cors_headers_present_for_allowed_origin(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         client = TestClient(
             create_app(
@@ -101,7 +101,7 @@ class TestCors:
         assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
     def test_cors_headers_absent_for_unlisted_origin(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         client = TestClient(
             create_app(
@@ -115,7 +115,7 @@ class TestCors:
 
 class TestInputValidation:
     def test_graph_vertices_rejects_oversized_name_filter(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -128,7 +128,7 @@ class TestInputValidation:
         assert response.status_code == 422
 
     def test_graph_vertices_accepts_name_at_max_length(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -141,7 +141,7 @@ class TestInputValidation:
         assert response.status_code == 200
 
     def test_sql_endpoint_rejects_oversized_query(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         db.touch()
@@ -153,7 +153,7 @@ class TestInputValidation:
 
 class TestServerApp:
     def test_health_endpoint_reports_status(self):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         configured_db = str((Path("/tmp/test.db")).resolve())
         client = TestClient(create_app(sqlite_db="/tmp/test.db", preload_default_model=False))
@@ -165,10 +165,10 @@ class TestServerApp:
         assert response.json()["indexer_enabled"] is False
 
     def test_embed_endpoint_uses_embedding_service(self, monkeypatch):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         monkeypatch.setattr(
-            "cindex.server.app.generate_embedding",
+            "trailhead.server.app.generate_embedding",
             lambda text, model, cache_folder=None: [0.1, 0.2, 0.3],
         )
 
@@ -184,7 +184,7 @@ class TestServerApp:
         assert body["embedding"] == [0.1, 0.2, 0.3]
 
     def test_query_sql_endpoint_returns_rows(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -203,7 +203,7 @@ class TestServerApp:
         assert body["rows"] == [{"id": 1, "name": "alpha"}]
 
     def test_query_templates_endpoint_lists_templates(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -226,7 +226,7 @@ class TestServerApp:
         assert all("category" in template for template in body["templates"])
 
     def test_query_template_run_endpoint_returns_rows(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -261,7 +261,7 @@ class TestServerApp:
         assert body["rows"][0]["name"] == "alpha"
 
     def test_graph_vertices_endpoint_returns_matches(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -284,7 +284,7 @@ class TestServerApp:
         assert response.json()["rows"][0]["vertex_id"] == "f1"
 
     def test_graph_traverse_endpoint_returns_subgraph(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -317,7 +317,7 @@ class TestServerApp:
         assert {vertex["vertex_id"] for vertex in response.json()["vertices"]} == {"m1", "f1"}
 
     def test_query_similar_endpoint_returns_matches(self, tmp_path, monkeypatch):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -343,7 +343,7 @@ class TestServerApp:
             )
 
         monkeypatch.setattr(
-            "cindex.services.indexing.query.generate_embedding",
+            "trailhead.services.indexing.query.generate_embedding",
             lambda text, model_name, cache_folder=None: [0.1, 0.2, 0.3],
         )
 
@@ -359,7 +359,7 @@ class TestServerApp:
         assert body["rows"][0]["name"] == "alpha"
 
     def test_query_similar_endpoint_returns_bad_request_for_invalid_model(self, tmp_path, monkeypatch):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "api.db"
         with sqlite3.connect(db) as conn:
@@ -375,7 +375,7 @@ class TestServerApp:
             )
 
         monkeypatch.setattr(
-            "cindex.services.indexing.query.generate_embedding",
+            "trailhead.services.indexing.query.generate_embedding",
             lambda text, model_name, cache_folder=None: (_ for _ in ()).throw(
                 OSError("Repo id must use alphanumeric chars")
             ),
@@ -391,7 +391,7 @@ class TestServerApp:
         assert "Repo id must use alphanumeric chars" in response.json()["detail"]
 
     def test_ui_uses_configured_database_path(self, tmp_path):
-        from cindex.server.app import create_app
+        from trailhead.server.app import create_app
 
         db = tmp_path / "ui.db"
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
@@ -409,7 +409,7 @@ class TestServerApp:
 
 class TestServeCommand:
     def test_serve_command_invokes_uvicorn(self, monkeypatch):
-        from cindex.cli.commands import serve
+        from trailhead.cli.commands import serve
 
         captured: dict[str, object] = {}
         sentinel_app = object()
@@ -428,7 +428,7 @@ class TestServeCommand:
             captured["host"] = host
             captured["port"] = port
 
-        monkeypatch.setattr("cindex.server.app.create_app", fake_create_app)
+        monkeypatch.setattr("trailhead.server.app.create_app", fake_create_app)
         monkeypatch.setattr("uvicorn.run", fake_run)
 
         rc = serve.run(

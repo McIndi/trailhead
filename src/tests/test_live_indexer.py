@@ -6,18 +6,18 @@ import sqlite3
 
 class TestReindexFile:
     def test_reindex_file_replaces_existing_rows_and_tracks_deletes(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.sqlite_store import reindex_file
+        from trailhead.services.indexing.sqlite_store import reindex_file
 
         source = tmp_path / "example.py"
         db = tmp_path / "graph.db"
         source.write_text("def alpha():\n    pass\n")
 
         monkeypatch.setattr(
-            "cindex.services.indexing.sqlite_store.generate_embeddings",
+            "trailhead.services.indexing.sqlite_store.generate_embeddings",
             lambda texts, model_name, cache_folder=None: [[0.1, 0.2, 0.3] for _ in texts],
         )
         monkeypatch.setattr(
-            "cindex.services.indexing.sqlite_store._try_initialize_sqlite_vector",
+            "trailhead.services.indexing.sqlite_store._try_initialize_sqlite_vector",
             lambda conn, dimension: True,
         )
 
@@ -60,7 +60,7 @@ class TestReindexFile:
 
 class TestLiveIndexerThreading:
     def test_start_launches_separate_watcher_and_worker_threads(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.live_indexer import LiveIndexer
+        from trailhead.services.indexing.live_indexer import LiveIndexer
 
         root = tmp_path / "src"
         root.mkdir()
@@ -68,7 +68,7 @@ class TestLiveIndexerThreading:
 
         # Prevent real file watching from running
         monkeypatch.setattr(
-            "cindex.services.indexing.live_indexer.watch",
+            "trailhead.services.indexing.live_indexer.watch",
             lambda *a, **kw: iter([]),
         )
 
@@ -79,13 +79,13 @@ class TestLiveIndexerThreading:
             assert service._watch_thread is not None
             assert service._worker_thread is not None
             assert service._watch_thread is not service._worker_thread
-            assert service._watch_thread.name == "cindex-indexer-watcher"
-            assert service._worker_thread.name == "cindex-indexer-worker"
+            assert service._watch_thread.name == "trailhead-indexer-watcher"
+            assert service._worker_thread.name == "trailhead-indexer-worker"
         finally:
             service.stop()
 
     def test_watcher_enqueues_changes_for_worker(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.live_indexer import LiveIndexer
+        from trailhead.services.indexing.live_indexer import LiveIndexer
 
         root = tmp_path / "src"
         root.mkdir()
@@ -101,7 +101,7 @@ class TestLiveIndexerThreading:
         fake_changes = [[(1, changed_path)]]  # Change.added = 1
 
         monkeypatch.setattr(
-            "cindex.services.indexing.live_indexer.watch",
+            "trailhead.services.indexing.live_indexer.watch",
             lambda *a, **kw: iter(fake_changes),
         )
 
@@ -119,8 +119,8 @@ class TestLiveIndexerThreading:
 
 class TestLiveIndexer:
     def test_synchronize_reindexes_changed_new_and_deleted_files(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.live_indexer import LiveIndexer
-        from cindex.services.indexing.sqlite_store import SCHEMA_SQL
+        from trailhead.services.indexing.live_indexer import LiveIndexer
+        from trailhead.services.indexing.sqlite_store import SCHEMA_SQL
 
         root = tmp_path / "src"
         root.mkdir()
@@ -148,7 +148,7 @@ class TestLiveIndexer:
             seen_paths.append(path.resolve())
             return (0, 0)
 
-        monkeypatch.setattr("cindex.services.indexing.live_indexer.reindex_file", fake_reindex_file)
+        monkeypatch.setattr("trailhead.services.indexing.live_indexer.reindex_file", fake_reindex_file)
 
         service = LiveIndexer(root=root, db_path=db, model_name="model-a")
         service.synchronize()

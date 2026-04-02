@@ -10,7 +10,7 @@ import pytest
 
 class TestPropertyGraph:
     def test_add_vertex_stores_label_and_properties(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         v = graph.add_vertex("module", name="mymodule", path="/foo/mymodule.py")
@@ -20,7 +20,7 @@ class TestPropertyGraph:
         assert v.id is not None
 
     def test_add_edge_stores_label_and_endpoints(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         v1 = graph.add_vertex("module", name="a")
@@ -31,7 +31,7 @@ class TestPropertyGraph:
         assert e.in_v.id == v2.id
 
     def test_vertices_filter_by_label(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         graph.add_vertex("module", name="a")
@@ -42,7 +42,7 @@ class TestPropertyGraph:
         assert len(graph.vertices()) == 3
 
     def test_edges_filter_by_label(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         v1 = graph.add_vertex("module", name="m")
@@ -57,7 +57,7 @@ class TestPropertyGraph:
         assert len(graph.edges()) == 3
 
     def test_out_edges_filtered_by_label(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         mod = graph.add_vertex("module", name="m")
@@ -69,7 +69,7 @@ class TestPropertyGraph:
         assert len(graph.out_edges(cls, "defines")) == 0
 
     def test_in_edges_filtered_by_label(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         mod = graph.add_vertex("module", name="m")
@@ -79,27 +79,27 @@ class TestPropertyGraph:
         assert len(graph.in_edges(mod, "defines")) == 0
 
     def test_vertex_ids_are_unique(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         vertices = [graph.add_vertex("module", name=str(i)) for i in range(100)]
         assert len({v.id for v in vertices}) == 100
 
     def test_get_vertex_returns_vertex_by_id(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         v = graph.add_vertex("module", name="m")
         assert graph.get_vertex(v.id) is v
 
     def test_get_vertex_returns_none_for_missing_id(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         assert graph.get_vertex("nonexistent") is None
 
     def test_out_edges_no_label_filter_returns_all(self):
-        from cindex.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.graph import PropertyGraph
 
         graph = PropertyGraph()
         a = graph.add_vertex("module", name="a")
@@ -114,8 +114,8 @@ class TestPropertyGraph:
 
 class TestParsePythonFile:
     def test_parses_module_docstring(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "docmod.py"
         f.write_text('"""module docs"""\n\nimport os\n')
@@ -125,8 +125,8 @@ class TestParsePythonFile:
         assert module_v.properties["docstring"] == "module docs"
 
     def test_parses_module_vertex(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "mymodule.py"
         f.write_text("")
@@ -137,8 +137,8 @@ class TestParsePythonFile:
         assert module_v.properties["path"] == str(f)
 
     def test_parses_top_level_function(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "funcs.py"
         f.write_text("def greet(name):\n    return 'hi'\n")
@@ -151,8 +151,8 @@ class TestParsePythonFile:
         assert funcs[0].properties["line"] == 1
 
     def test_function_source_and_docstring_are_captured(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "funcs.py"
         f.write_text(
@@ -169,8 +169,8 @@ class TestParsePythonFile:
         assert "message = f'hi {name}'" in func.properties["source"]
 
     def test_method_source_and_docstring_are_captured(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "animal.py"
         f.write_text(
@@ -187,8 +187,8 @@ class TestParsePythonFile:
         assert "return 'woof'" in method.properties["source"]
 
     def test_parses_class(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "classes.py"
         f.write_text("class Dog:\n    pass\n")
@@ -201,8 +201,8 @@ class TestParsePythonFile:
         assert classes[0].properties["line"] == 1
 
     def test_parses_class_methods(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "animal.py"
         f.write_text(
@@ -220,8 +220,8 @@ class TestParsePythonFile:
         assert {v.properties["name"] for v in methods} == {"bark", "sit"}
 
     def test_method_edges_from_class(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "animal.py"
         f.write_text("class Dog:\n    def bark(self):\n        pass\n")
@@ -235,8 +235,8 @@ class TestParsePythonFile:
         assert method_edges[0].in_v.properties["name"] == "bark"
 
     def test_module_defines_edge_to_class(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "mod.py"
         f.write_text("class Foo:\n    pass\n")
@@ -248,8 +248,8 @@ class TestParsePythonFile:
         assert define_edges[0].in_v.label == "class"
 
     def test_module_defines_edge_to_top_level_function(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "mod.py"
         f.write_text("def foo():\n    pass\n")
@@ -261,8 +261,8 @@ class TestParsePythonFile:
         assert define_edges[0].in_v.label == "function"
 
     def test_parses_import_statement(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "importer.py"
         f.write_text("import os\nimport sys\n")
@@ -273,8 +273,8 @@ class TestParsePythonFile:
         assert imported == {"os", "sys"}
 
     def test_parses_from_import_statement(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "importer.py"
         f.write_text("from pathlib import Path\n")
@@ -286,8 +286,8 @@ class TestParsePythonFile:
         assert import_edges[0].in_v.properties["name"] == "pathlib"
 
     def test_duplicate_imports_share_external_vertex(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f1 = tmp_path / "a.py"
         f2 = tmp_path / "b.py"
@@ -301,8 +301,8 @@ class TestParsePythonFile:
         assert len(os_vertices) == 1
 
     def test_decorated_function_is_captured(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "deco.py"
         f.write_text("import functools\n\n@functools.cache\ndef expensive():\n    pass\n")
@@ -313,8 +313,8 @@ class TestParsePythonFile:
         assert "expensive" in names
 
     def test_decorated_method_is_captured(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "cls.py"
         f.write_text(
@@ -334,8 +334,8 @@ class TestParsePythonFile:
 
     def test_nested_function_are_captured(self, tmp_path):
         """Functions defined inside other functions are indexed."""
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.parser import parse_python_file
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.parser import parse_python_file
 
         f = tmp_path / "nested.py"
         f.write_text(
@@ -355,14 +355,14 @@ class TestParsePythonFile:
 
 class TestIndexDirectory:
     def test_empty_directory(self, tmp_path):
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.walker import index_directory
 
         graph = index_directory(tmp_path)
         assert graph.vertices() == []
         assert graph.edges() == []
 
     def test_indexes_single_file(self, tmp_path):
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.walker import index_directory
 
         (tmp_path / "foo.py").write_text("def bar(): pass\n")
         graph = index_directory(tmp_path)
@@ -370,7 +370,7 @@ class TestIndexDirectory:
         assert len(graph.vertices("function")) == 1
 
     def test_recurses_into_subdirectories(self, tmp_path):
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.walker import index_directory
 
         sub = tmp_path / "sub"
         sub.mkdir()
@@ -382,7 +382,7 @@ class TestIndexDirectory:
         assert "nested" in module_names
 
     def test_ignores_non_python_files(self, tmp_path):
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.walker import index_directory
 
         (tmp_path / "README.md").write_text("# readme")
         (tmp_path / "config.json").write_text("{}")
@@ -391,8 +391,8 @@ class TestIndexDirectory:
         assert len(graph.vertices("module")) == 1
 
     def test_accepts_existing_graph(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.walker import index_directory
 
         (tmp_path / "a.py").write_text("")
         graph = PropertyGraph()
@@ -401,7 +401,7 @@ class TestIndexDirectory:
         assert len(result.vertices("module")) == 1
 
     def test_multiple_files_accumulate_in_graph(self, tmp_path):
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.walker import index_directory
 
         (tmp_path / "a.py").write_text("class A: pass\n")
         (tmp_path / "b.py").write_text("class B: pass\n")
@@ -411,7 +411,7 @@ class TestIndexDirectory:
 
     def test_parse_failure_logs_summary_and_continues(self, tmp_path, caplog):
         import logging
-        from cindex.services.indexing.walker import index_directory
+        from trailhead.services.indexing.walker import index_directory
 
         good = tmp_path / "good.py"
         bad = tmp_path / "bad.py"
@@ -420,7 +420,7 @@ class TestIndexDirectory:
 
         with caplog.at_level(logging.WARNING):
             # Patch parse_file to raise on bad.py
-            import cindex.services.indexing.walker as walker_mod
+            import trailhead.services.indexing.walker as walker_mod
             original = walker_mod.parse_file
 
             def patched(path, graph):
@@ -442,8 +442,8 @@ class TestIndexDirectory:
 
 class TestSqliteStore:
     def test_persist_graph_creates_db_and_saves_rows(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.sqlite_store import persist_graph
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.sqlite_store import persist_graph
 
         graph = PropertyGraph()
         mod = graph.add_vertex("module", name="m", path="/tmp/m.py")
@@ -458,9 +458,9 @@ class TestSqliteStore:
         assert e_count == 1
 
     def test_load_graph_round_trip(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.sqlite_store import load_graph
-        from cindex.services.indexing.sqlite_store import persist_graph
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.sqlite_store import load_graph
+        from trailhead.services.indexing.sqlite_store import persist_graph
 
         graph = PropertyGraph()
         mod = graph.add_vertex("module", name="m", path="/tmp/m.py")
@@ -476,8 +476,8 @@ class TestSqliteStore:
         assert len(loaded.edges("defines")) == 1
 
     def test_persist_replace_mode_clears_existing_rows(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.sqlite_store import persist_graph
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.sqlite_store import persist_graph
 
         db = tmp_path / "graph.db"
 
@@ -497,8 +497,8 @@ class TestSqliteStore:
         assert e_count == 1
 
     def test_persist_append_mode_keeps_existing_rows(self, tmp_path):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.sqlite_store import persist_graph
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.sqlite_store import persist_graph
 
         db = tmp_path / "graph.db"
 
@@ -518,9 +518,9 @@ class TestSqliteStore:
         assert e_count == 2
 
     def test_persist_vertex_embeddings_writes_rows(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.sqlite_store import persist_graph
-        from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.sqlite_store import persist_graph
+        from trailhead.services.indexing.sqlite_store import persist_vertex_embeddings
 
         graph = PropertyGraph()
         mod = graph.add_vertex("module", name="m", path="/tmp/m.py")
@@ -528,11 +528,11 @@ class TestSqliteStore:
         graph.add_edge("defines", mod, fn)
 
         monkeypatch.setattr(
-            "cindex.services.indexing.sqlite_store.generate_embeddings",
+            "trailhead.services.indexing.sqlite_store.generate_embeddings",
             lambda texts, model_name, cache_folder=None: [[0.1, 0.2, 0.3] for _ in texts],
         )
         monkeypatch.setattr(
-            "cindex.services.indexing.sqlite_store._try_initialize_sqlite_vector",
+            "trailhead.services.indexing.sqlite_store._try_initialize_sqlite_vector",
             lambda conn, dimension: True,
         )
 
@@ -557,12 +557,12 @@ class TestSqliteStore:
             assert stored_dim == 3
 
     def test_persist_vertex_embeddings_replace_mode_clears_previous(self, tmp_path, monkeypatch):
-        from cindex.services.indexing.graph import PropertyGraph
-        from cindex.services.indexing.sqlite_store import persist_graph
-        from cindex.services.indexing.sqlite_store import persist_vertex_embeddings
+        from trailhead.services.indexing.graph import PropertyGraph
+        from trailhead.services.indexing.sqlite_store import persist_graph
+        from trailhead.services.indexing.sqlite_store import persist_vertex_embeddings
 
         monkeypatch.setattr(
-            "cindex.services.indexing.sqlite_store.generate_embeddings",
+            "trailhead.services.indexing.sqlite_store.generate_embeddings",
             lambda texts, model_name, cache_folder=None: [[0.1, 0.2] for _ in texts],
         )
 
@@ -583,7 +583,7 @@ class TestSqliteStore:
 
 class TestIndexCommandSqlite:
     def test_index_command_writes_sqlite_file(self, tmp_path):
-        from cindex.cli import app as cli
+        from trailhead.cli import app as cli
 
         src = tmp_path / "src"
         src.mkdir()
@@ -596,7 +596,7 @@ class TestIndexCommandSqlite:
         assert db.exists()
 
     def test_index_command_embed_model_requires_sqlite_db(self, tmp_path):
-        from cindex.cli import app as cli
+        from trailhead.cli import app as cli
 
         src = tmp_path / "src"
         src.mkdir()
@@ -606,7 +606,7 @@ class TestIndexCommandSqlite:
         assert rc == 1
 
     def test_index_command_embed_model_persists_vectors(self, tmp_path, monkeypatch):
-        from cindex.cli import app as cli
+        from trailhead.cli import app as cli
 
         src = tmp_path / "src"
         src.mkdir()
@@ -614,7 +614,7 @@ class TestIndexCommandSqlite:
         db = tmp_path / "graph.db"
 
         monkeypatch.setattr(
-            "cindex.cli.commands.index.persist_vertex_embeddings",
+            "trailhead.cli.commands.index.persist_vertex_embeddings",
             lambda graph, db_path, **kwargs: (2, 384, True),
         )
 

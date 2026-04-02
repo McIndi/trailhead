@@ -12,7 +12,7 @@ class TestGenerateEmbedding:
         """Test generate_embedding converts numpy array to list."""
         import numpy as np
 
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         mock_embedding = np.array([0.1, 0.2, 0.3, 0.4, 0.5])
 
@@ -36,7 +36,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_with_plain_list(self, monkeypatch) -> None:
         """Test generate_embedding handles plain lists (no .tolist() method)."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         plain_list = [0.5, 0.6, 0.7]
 
@@ -57,7 +57,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_passes_cache_folder(self, monkeypatch) -> None:
         """Test that cache_folder is passed to SentenceTransformer."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         recorded = {}
 
@@ -82,7 +82,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_default_cache_folder(self, monkeypatch) -> None:
         """Test that cache_folder defaults to None."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         recorded = {}
 
@@ -105,7 +105,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_with_different_texts(self, monkeypatch) -> None:
         """Test generate_embedding encodes different texts."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         texts_encoded = []
 
@@ -131,7 +131,7 @@ class TestGenerateEmbedding:
         """Test that all values in result are floats, even from integer arrays."""
         import numpy as np
 
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         mock_embedding = np.array([1, 2, 3], dtype=np.int32)
 
@@ -154,7 +154,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_empty_text(self, monkeypatch) -> None:
         """Test generate_embedding with empty text."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         class MockModel:
             def encode(self, text: str):
@@ -175,7 +175,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_long_text(self, monkeypatch) -> None:
         """Test generate_embedding with long text."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         long_text = "word " * 1000
 
@@ -202,7 +202,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_special_characters(self, monkeypatch) -> None:
         """Test generate_embedding with special characters."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         special_text = "Hello 你好 مرحبا 🎉 @#$%^&*()"
 
@@ -229,7 +229,7 @@ class TestGenerateEmbedding:
 
     def test_generate_embedding_different_model_names(self, monkeypatch) -> None:
         """Test generate_embedding with different model names."""
-        from cindex.services.embeddings import generate_embedding
+        from trailhead.services.embeddings import generate_embedding
 
         models_loaded = []
 
