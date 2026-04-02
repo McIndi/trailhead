@@ -25,10 +25,6 @@ classifiers = [
   "Topic :: Text Processing :: Indexing",
 ]
 
-[project.urls]
-Homepage = "https://github.com/McIndi/trailhead"
-Repository = "https://github.com/McIndi/trailhead"
-Issues = "https://github.com/McIndi/trailhead/issues"
 dependencies = [
   "sentence-transformers",
   "tree-sitter>=0.21",
@@ -38,6 +34,11 @@ dependencies = [
   "uvicorn>=0.30",
   "watchfiles>=0.24",
 ]
+
+[project.urls]
+Homepage = "https://github.com/McIndi/trailhead"
+Repository = "https://github.com/McIndi/trailhead"
+Issues = "https://github.com/McIndi/trailhead/issues"
 
 [project.optional-dependencies]
 dev = [
