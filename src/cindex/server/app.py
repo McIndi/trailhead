@@ -274,7 +274,7 @@ def _register_routes(app: FastAPI) -> None:
     app.add_api_route("/api/graph/vertices", graph_vertices_get, methods=["GET"])
     app.add_api_route("/api/graph/traverse", graph_traverse_get, methods=["GET"])
     app.add_api_route(
-        "/ui/",
+        "/",
         ui_dashboard,
         methods=["GET"],
         response_class=HTMLResponse,

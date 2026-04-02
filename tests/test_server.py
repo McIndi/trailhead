@@ -396,7 +396,7 @@ class TestServerApp:
         db = tmp_path / "ui.db"
         client = TestClient(create_app(sqlite_db=str(db), preload_default_model=False))
 
-        response = client.get("/ui")
+        response = client.get("/")
 
         assert response.status_code == 200
         assert str(db.resolve()) in response.text
