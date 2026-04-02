@@ -40,7 +40,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         "--cache-dir",
         default=None,
         help=(
-            "Directory to cache downloaded models. Overrides CINDEX_CACHE_DIR env var. "
+            "Directory to cache downloaded models. Overrides TRAILHEAD_CACHE_DIR env var. "
             "If not set, uses Hugging Face default cache."
         ),
     )

@@ -43,7 +43,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--cache-dir",
         default=None,
-        help="Directory to cache downloaded models. Overrides CINDEX_CACHE_DIR.",
+        help="Directory to cache downloaded models. Overrides TRAILHEAD_CACHE_DIR.",
     )
     parser.add_argument(
         "--sqlite-db",
@@ -63,7 +63,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help=(
             "Allow any Hugging Face model ID for --model, bypassing the built-in "
-            "allowlist. Can also be set via the CINDEX_ALLOW_ANY_MODEL environment variable."
+            "allowlist. Can also be set via the TRAILHEAD_ALLOW_ANY_MODEL environment variable."
         ),
     )
     parser.add_argument(
@@ -73,7 +73,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         help=(
             "Comma-separated list of allowed CORS origins "
             "(e.g. http://localhost:3000,http://127.0.0.1:5173). "
-            "Can also be set via CINDEX_CORS_ORIGINS. Unset disables CORS."
+            "Can also be set via TRAILHEAD_CORS_ORIGINS. Unset disables CORS."
         ),
     )
     parser.add_argument(
@@ -92,7 +92,7 @@ def run(args: argparse.Namespace) -> int:
     if not is_model_allowed(args.model, allow_any=args.allow_any_model):
         logger.error(
             "Model '%s' is not in the allowlist. Allowed models: %s. "
-            "Pass --allow-any-model or set CINDEX_ALLOW_ANY_MODEL=1 to use a custom model.",
+            "Pass --allow-any-model or set TRAILHEAD_ALLOW_ANY_MODEL=1 to use a custom model.",
             args.model,
             ", ".join(sorted(ALLOWED_MODELS)),
         )
@@ -138,7 +138,7 @@ def run(args: argparse.Namespace) -> int:
         format="%(levelname)-8s %(name)s — %(message)s",
     )
 
-    cors_origins_raw = args.cors_origins or os.environ.get("CINDEX_CORS_ORIGINS", "")
+    cors_origins_raw = args.cors_origins or os.environ.get("TRAILHEAD_CORS_ORIGINS", "")
     cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
 
     from trailhead.server.app import create_app

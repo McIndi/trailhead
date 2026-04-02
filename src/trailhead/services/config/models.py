@@ -11,7 +11,7 @@ ALLOWED_MODELS: frozenset[str] = frozenset({
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
 })
 
-_ENV_VAR = "CINDEX_ALLOW_ANY_MODEL"
+_ENV_VAR = "TRAILHEAD_ALLOW_ANY_MODEL"
 
 
 def is_model_allowed(model_name: str, *, allow_any: bool = False) -> bool:
@@ -21,7 +21,7 @@ def is_model_allowed(model_name: str, *, allow_any: bool = False) -> bool:
 
     - It appears in ``ALLOWED_MODELS``.
     - *allow_any* is True (from ``--allow-any-model`` CLI flag).
-    - The environment variable ``CINDEX_ALLOW_ANY_MODEL`` is set to a
+    - The environment variable ``TRAILHEAD_ALLOW_ANY_MODEL`` is set to a
       truthy value (``1``, ``true``, or ``yes``, case-insensitive).
     """
     if model_name in ALLOWED_MODELS:

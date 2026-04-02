@@ -66,7 +66,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
     similar_parser.add_argument(
         "--cache-dir",
         default=None,
-        help="Directory to cache downloaded models. Overrides CINDEX_CACHE_DIR.",
+        help="Directory to cache downloaded models. Overrides TRAILHEAD_CACHE_DIR.",
     )
     similar_parser.add_argument(
         "-k",

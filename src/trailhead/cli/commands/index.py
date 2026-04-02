@@ -85,7 +85,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help=(
             "Optional cache directory for embedding models. "
-            "Defaults to CINDEX_CACHE_DIR if set, otherwise Hugging Face default."
+            "Defaults to TRAILHEAD_CACHE_DIR if set, otherwise Hugging Face default."
         ),
     )
     parser.add_argument(
@@ -93,7 +93,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help=(
             "Allow any Hugging Face model ID for --embed-model, bypassing the built-in "
-            "allowlist. Can also be set via the CINDEX_ALLOW_ANY_MODEL environment variable."
+            "allowlist. Can also be set via the TRAILHEAD_ALLOW_ANY_MODEL environment variable."
         ),
     )
     parser.set_defaults(func=run)
@@ -124,7 +124,7 @@ def run(args: argparse.Namespace) -> int:
     if args.embed_model and not is_model_allowed(args.embed_model, allow_any=args.allow_any_model):
         logger.error(
             "Model '%s' is not in the allowlist. Allowed models: %s. "
-            "Pass --allow-any-model or set CINDEX_ALLOW_ANY_MODEL=1 to use a custom model.",
+            "Pass --allow-any-model or set TRAILHEAD_ALLOW_ANY_MODEL=1 to use a custom model.",
             args.embed_model,
             ", ".join(sorted(ALLOWED_MODELS)),
         )

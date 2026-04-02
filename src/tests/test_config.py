@@ -20,25 +20,25 @@ class TestIsModelAllowed:
     def test_env_var_bypasses_allowlist(self, monkeypatch):
         from trailhead.services.config import is_model_allowed
 
-        monkeypatch.setenv("CINDEX_ALLOW_ANY_MODEL", "1")
+        monkeypatch.setenv("TRAILHEAD_ALLOW_ANY_MODEL", "1")
         assert is_model_allowed("some-org/custom-model") is True
 
     def test_env_var_true_string_bypasses_allowlist(self, monkeypatch):
         from trailhead.services.config import is_model_allowed
 
-        monkeypatch.setenv("CINDEX_ALLOW_ANY_MODEL", "true")
+        monkeypatch.setenv("TRAILHEAD_ALLOW_ANY_MODEL", "true")
         assert is_model_allowed("some-org/custom-model") is True
 
     def test_env_var_unset_does_not_bypass(self, monkeypatch):
         from trailhead.services.config import is_model_allowed
 
-        monkeypatch.delenv("CINDEX_ALLOW_ANY_MODEL", raising=False)
+        monkeypatch.delenv("TRAILHEAD_ALLOW_ANY_MODEL", raising=False)
         assert is_model_allowed("some-org/custom-model") is False
 
     def test_env_var_arbitrary_value_does_not_bypass(self, monkeypatch):
         from trailhead.services.config import is_model_allowed
 
-        monkeypatch.setenv("CINDEX_ALLOW_ANY_MODEL", "maybe")
+        monkeypatch.setenv("TRAILHEAD_ALLOW_ANY_MODEL", "maybe")
         assert is_model_allowed("some-org/custom-model") is False
 
     def test_all_allowlisted_models_are_permitted(self):
@@ -53,7 +53,7 @@ class TestServeCommandModelValidation:
     def test_serve_rejects_unlisted_model(self, monkeypatch):
         from trailhead.cli.commands import serve
 
-        monkeypatch.delenv("CINDEX_ALLOW_ANY_MODEL", raising=False)
+        monkeypatch.delenv("TRAILHEAD_ALLOW_ANY_MODEL", raising=False)
 
         rc = serve.run(
             type(
@@ -79,7 +79,7 @@ class TestServeCommandModelValidation:
     def test_serve_accepts_unlisted_model_with_flag(self, monkeypatch, tmp_path):
         from trailhead.cli.commands import serve
 
-        monkeypatch.delenv("CINDEX_ALLOW_ANY_MODEL", raising=False)
+        monkeypatch.delenv("TRAILHEAD_ALLOW_ANY_MODEL", raising=False)
         monkeypatch.setattr("trailhead.server.app.create_app", lambda **kw: object())
         monkeypatch.setattr("uvicorn.run", lambda *a, **kw: None)
 
@@ -107,7 +107,7 @@ class TestServeCommandModelValidation:
     def test_serve_accepts_unlisted_model_via_env_var(self, monkeypatch, tmp_path):
         from trailhead.cli.commands import serve
 
-        monkeypatch.setenv("CINDEX_ALLOW_ANY_MODEL", "1")
+        monkeypatch.setenv("TRAILHEAD_ALLOW_ANY_MODEL", "1")
         monkeypatch.setattr("trailhead.server.app.create_app", lambda **kw: object())
         monkeypatch.setattr("uvicorn.run", lambda *a, **kw: None)
 

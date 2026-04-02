@@ -16,13 +16,8 @@ Command-line code indexing and semantic search tool. It parses source files into
 
 ## Install
 
-Create and activate a virtual environment, then install the project in editable mode with dev dependencies:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e .[dev]
+```bash
+pip install trailhead
 ```
 
 ### Language support
@@ -31,25 +26,37 @@ Python is supported out of the box. Additional languages are installed as option
 
 Install individual languages:
 
-```powershell
-pip install -e .[javascript]
-pip install -e .[typescript]
-pip install -e .[rust]
-pip install -e .[go]
-pip install -e .[java]
-pip install -e .[csharp]
-pip install -e .[c]
-pip install -e .[cpp]
-pip install -e .[ruby]
-pip install -e .[php]
-pip install -e .[bash]
-pip install -e .[html]
+```bash
+pip install "trailhead[javascript]"
+pip install "trailhead[typescript]"
+pip install "trailhead[rust]"
+pip install "trailhead[go]"
+pip install "trailhead[java]"
+pip install "trailhead[csharp]"
+pip install "trailhead[c]"
+pip install "trailhead[cpp]"
+pip install "trailhead[ruby]"
+pip install "trailhead[php]"
+pip install "trailhead[bash]"
+pip install "trailhead[html]"
 ```
 
 Or install everything at once:
 
-```powershell
-pip install -e .[all-languages]
+```bash
+pip install "trailhead[all-languages]"
+```
+
+### Development install
+
+To get the latest unreleased changes, install directly from the repository:
+
+```bash
+git clone https://github.com/McIndi/trailhead.git
+cd trailhead
+python -m venv .venv
+source .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 ```
 
 | Extra | Language | File extensions |
@@ -73,11 +80,11 @@ pip install -e .[all-languages]
 The typical workflow is: index your source tree once, then serve and query it.
 
 ```powershell
-# 1. Index a project (writes .cindex/db.sqlite by default)
-th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
+# 1. Index a project (writes .trailhead/db.sqlite by default)
+th index . --sqlite-db ./.trailhead/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
 
 # 2. Start the server (watches for changes, keeps embeddings warm)
-th serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-MiniLM-L6-v2
+th serve . --sqlite-db ./.trailhead/graph.db --model sentence-transformers/all-MiniLM-L6-v2
 
 # 3. Open the browser UI
 start http://localhost:8000
@@ -105,14 +112,14 @@ The command prints the embedding as a JSON array of floats.
 Optional cache override:
 
 ```powershell
-$env:CINDEX_CACHE_DIR = "C:\models\cache"
+$env:TRAILHEAD_CACHE_DIR = "C:\models\cache"
 th embed "A short sentence to embed"
 th embed "A short sentence to embed" --cache-dir "C:\another\cache"
 ```
 
 ### index
 
-Index a directory of source files. The graph is persisted to `.cindex/db.sqlite` by default (smart sync: full build on first run, incremental on subsequent runs):
+Index a directory of source files. The graph is persisted to `.trailhead/db.sqlite` by default (smart sync: full build on first run, incremental on subsequent runs):
 
 ```powershell
 th index .
@@ -129,46 +136,46 @@ Watch for file changes and reindex incrementally (Ctrl-C to stop):
 
 ```powershell
 th index . --watch
-th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --watch
+th index . --sqlite-db ./.trailhead/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --watch
 ```
 
 Use a custom database path or add embeddings:
 
 ```powershell
-th index . --sqlite-db ./.cindex/graph.db
-th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
-th index . --sqlite-db ./.cindex/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
+th index . --sqlite-db ./.trailhead/graph.db
+th index . --sqlite-db ./.trailhead/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2
+th index . --sqlite-db ./.trailhead/graph.db --embed-model sentence-transformers/all-MiniLM-L6-v2 --embed-cache-dir C:\models\cache
 ```
 
 When `sqlite-vector` can be loaded, trailhead also initializes vector search for the `vertex_embeddings.embedding` column. If extension loading is unavailable on your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
 
 ### serve
 
-Run the warm-model API server with a background indexer. The server watches the source tree, keeps the SQLite graph fresh, and reuses the loaded embedding model across index updates. The database defaults to `.cindex/db.sqlite` under the watched directory:
+Run the warm-model API server with a background indexer. The server watches the source tree, keeps the SQLite graph fresh, and reuses the loaded embedding model across index updates. The database defaults to `.trailhead/db.sqlite` under the watched directory:
 
 ```powershell
 th serve .
 th serve . --model sentence-transformers/all-MiniLM-L6-v2
-th serve . --sqlite-db ./.cindex/graph.db --model sentence-transformers/all-MiniLM-L6-v2
+th serve . --sqlite-db ./.trailhead/graph.db --model sentence-transformers/all-MiniLM-L6-v2
 ```
 
 The browser UI is available at `http://localhost:8000` once the server starts.
 
 ### query
 
-Run a read-only SQL query against the SQLite database (defaults to `./.cindex/db.sqlite`):
+Run a read-only SQL query against the SQLite database (defaults to `./.trailhead/db.sqlite`):
 
 ```powershell
 th query sql --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
-th query sql --sqlite-db ./.cindex/graph.db --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
+th query sql --sqlite-db ./.trailhead/graph.db --sql "SELECT label, COUNT(*) AS n FROM vertices GROUP BY label ORDER BY label"
 ```
 
 Run a semantic similarity query against stored vertex embeddings:
 
 ```powershell
 th query similar "find sqlite vector initialization code"
-th query similar "find sqlite vector initialization code" --sqlite-db ./.cindex/graph.db
-th query similar "graph persistence" --sqlite-db ./.cindex/graph.db --label function --k 5 --output json
+th query similar "find sqlite vector initialization code" --sqlite-db ./.trailhead/graph.db
+th query similar "graph persistence" --sqlite-db ./.trailhead/graph.db --label function --k 5 --output json
 ```
 
 ## HTTP API
@@ -318,7 +325,7 @@ pytest
 |-- pyproject.toml
 |-- README.md
 |-- src/
-|   `-- cindex/
+|   `-- trailhead/
 |       |-- __init__.py
 |       |-- __main__.py
 |       |-- cli/
@@ -383,8 +390,8 @@ Any language with a tree-sitter Python binding can be supported in three steps:
 
 ```python
 # 1. Create your adapter (e.g. my_adapters/kotlin.py)
-from cindex.services.indexing.adapters.base import LanguageAdapter, _node_text, _complexity
-from cindex.services.indexing.graph import PropertyGraph, Vertex
+from trailhead.services.indexing.adapters.base import LanguageAdapter, _node_text, _complexity
+from trailhead.services.indexing.graph import PropertyGraph, Vertex
 from pathlib import Path
 
 class KotlinAdapter(LanguageAdapter):
@@ -410,7 +417,7 @@ class KotlinAdapter(LanguageAdapter):
         return module_v
 
 # 2. Register it at startup (e.g. in your app's __init__ or conftest)
-from cindex.services.indexing.adapters import register
+from trailhead.services.indexing.adapters import register
 register(KotlinAdapter())
 
 # 3. Done — th index, serve, and query all pick it up automatically.

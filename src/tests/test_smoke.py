@@ -16,7 +16,7 @@ def test_main_smoke(monkeypatch, capsys, caplog) -> None:
         "trailhead.cli.commands.embed.generate_embedding",
         fake_generate_embedding,
     )
-    monkeypatch.delenv("CINDEX_CACHE_DIR", raising=False)
+    monkeypatch.delenv("TRAILHEAD_CACHE_DIR", raising=False)
 
     assert (
         cli.main(

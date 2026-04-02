@@ -9,4 +9,4 @@ build/
 *.egg-info/
 db.sqlite
 db.sqlite3
-.cindex/
+.trailhead/
