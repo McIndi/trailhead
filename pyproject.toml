@@ -5,12 +5,30 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trailhead"
 dynamic = ["version"]
-description = "A command-line tool for generating text embeddings with sentence-transformers."
+description = "Codebase indexing and semantic search using tree-sitter parsing, vector embeddings, and SQLite graph storage."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [
-  { name = "Cliff" }
+  { name = "Cliff Bressette", email = "cliffordbressette@mcindi.com" }
 ]
+keywords = ["indexing", "semantic-search", "rag", "sqlite", "vectors", "tree-sitter", "embeddings", "code-search"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Text Processing :: Indexing",
+]
+
+[project.urls]
+Homepage = "https://github.com/McIndi/trailhead"
+Repository = "https://github.com/McIndi/trailhead"
+Issues = "https://github.com/McIndi/trailhead/issues"
 dependencies = [
   "sentence-transformers",
   "tree-sitter>=0.21",
