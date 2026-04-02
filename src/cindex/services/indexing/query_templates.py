@@ -446,6 +446,57 @@ ORDER BY e.label, e.id;
 """.strip(),
     ),
     QueryTemplate(
+        name="most_called_functions",
+        category="calls",
+        title="Most Called Functions",
+        description="Functions sorted by how many distinct callers call them (inbound call degree).",
+        sql="""
+SELECT
+  json_extract(v.properties_json, '$.name') AS name,
+  json_extract(v.properties_json, '$.path') AS path,
+  json_extract(v.properties_json, '$.line') AS line,
+  COUNT(DISTINCT e.out_v_id) AS caller_count,
+  v.id AS vertex_id
+FROM vertices v
+JOIN edges e ON e.in_v_id = v.id AND e.label = 'calls'
+WHERE v.label = 'function'
+GROUP BY v.id
+ORDER BY caller_count DESC, name;
+""".strip(),
+    ),
+    QueryTemplate(
+        name="call_graph_hubs",
+        category="calls",
+        title="Call Graph Hubs",
+        description="Functions with high combined inbound + outbound call degree — likely orchestrators or utilities.",
+        sql="""
+WITH outbound AS (
+  SELECT out_v_id AS v_id, COUNT(DISTINCT in_v_id) AS calls_out
+  FROM edges WHERE label = 'calls'
+  GROUP BY out_v_id
+),
+inbound AS (
+  SELECT in_v_id AS v_id, COUNT(DISTINCT out_v_id) AS calls_in
+  FROM edges WHERE label = 'calls'
+  GROUP BY in_v_id
+)
+SELECT
+  json_extract(v.properties_json, '$.name') AS name,
+  json_extract(v.properties_json, '$.path') AS path,
+  json_extract(v.properties_json, '$.line') AS line,
+  COALESCE(o.calls_out, 0) AS calls_out,
+  COALESCE(i.calls_in, 0) AS calls_in,
+  COALESCE(o.calls_out, 0) + COALESCE(i.calls_in, 0) AS degree,
+  v.id AS vertex_id
+FROM vertices v
+LEFT JOIN outbound o ON o.v_id = v.id
+LEFT JOIN inbound i ON i.v_id = v.id
+WHERE v.label = 'function'
+  AND (COALESCE(o.calls_out, 0) + COALESCE(i.calls_in, 0)) > 0
+ORDER BY degree DESC, name;
+""".strip(),
+    ),
+    QueryTemplate(
         name="todo_fixme_inventory",
         category="quality",
         title="TODO/FIXME Inventory",

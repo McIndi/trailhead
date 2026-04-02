@@ -15,6 +15,7 @@ Edge labels
   defines    – module → class or module → function (top-level)
   has_method – class  → function (method inside a class body)
   imports    – module → external
+  calls      – function → function (call site within a function body)
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ LABEL_EXTERNAL = "external"
 EDGE_DEFINES = "defines"
 EDGE_HAS_METHOD = "has_method"
 EDGE_IMPORTS = "imports"
+EDGE_CALLS = "calls"
 
 
 class PythonAdapter(LanguageAdapter):
@@ -100,6 +102,7 @@ def parse_python_file(path: Path, graph: PropertyGraph) -> Vertex:
 
     module_v = graph.add_vertex(LABEL_MODULE, **module_props)
     _visit_children(tree.root_node, graph, module_v, None, source)
+    _collect_calls(tree.root_node, graph, module_v, source)
     return module_v
 
 
@@ -181,6 +184,88 @@ def _visit(
         # Generic node — recurse but don't descend into class/function bodies
         # (those are handled by their dedicated handlers).
         _visit_children(node, graph, module_v, class_v, source)
+
+
+def _collect_calls(tree_root, graph: PropertyGraph, module_v: Vertex, source: bytes) -> None:
+    """Second pass: add 'calls' edges for every call site inside a function body.
+
+    Name resolution order:
+      1. Functions defined in this file (path match) — most specific.
+      2. Any function vertex elsewhere in the graph with the same name.
+
+    Only simple names and attribute access (``obj.method``) are resolved; complex
+    callees (subscripts, calls-on-calls, etc.) are silently skipped.  Duplicate
+    (caller, callee) pairs are deduplicated so the graph stays clean.
+    """
+    file_path = module_v.properties["path"]
+    all_funcs = graph.vertices(LABEL_FUNCTION)
+
+    # Build name → vertex maps: prefer same-file functions for resolution.
+    local_by_name: dict[str, Vertex] = {}
+    global_by_name: dict[str, Vertex] = {}
+    for v in all_funcs:
+        name = v.properties.get("name", "")
+        if not name:
+            continue
+        if v.properties.get("path") == file_path:
+            local_by_name[name] = v
+        else:
+            global_by_name.setdefault(name, v)
+
+    def _resolve(name: str) -> Vertex | None:
+        return local_by_name.get(name) or global_by_name.get(name)
+
+    # Build path+line → vertex for fast caller lookup.
+    caller_by_loc: dict[tuple[str, int], Vertex] = {
+        (v.properties["path"], v.properties["line"]): v
+        for v in all_funcs
+        if "path" in v.properties and "line" in v.properties
+    }
+
+    seen_edges: set[tuple[str, str]] = set()
+
+    def _add_call(caller_v: Vertex, callee_name: str) -> None:
+        callee_v = _resolve(callee_name)
+        if callee_v is None or callee_v.id == caller_v.id:
+            return
+        key = (caller_v.id, callee_v.id)
+        if key not in seen_edges:
+            seen_edges.add(key)
+            graph.add_edge(EDGE_CALLS, caller_v, callee_v)
+
+    def _callee_name(func_node) -> str | None:
+        """Extract a simple function/method name from a call's function node."""
+        t = func_node.type
+        if t == "identifier":
+            return _text(func_node, source)
+        if t == "attribute":
+            attr = func_node.child_by_field_name("attribute")
+            return _text(attr, source) if attr else None
+        return None
+
+    def _walk(node, caller_v: Vertex | None) -> None:
+        t = node.type
+        if t in ("function_definition", "async_function_definition"):
+            line = node.start_point[0] + 1
+            this_caller = caller_by_loc.get((file_path, line), caller_v)
+            body = node.child_by_field_name("body")
+            if body:
+                for child in body.children:
+                    _walk(child, this_caller)
+        elif t == "call" and caller_v is not None:
+            func_node = node.child_by_field_name("function")
+            if func_node:
+                name = _callee_name(func_node)
+                if name:
+                    _add_call(caller_v, name)
+            # Still recurse — calls can be nested (e.g. ``f(g(x))``).
+            for child in node.children:
+                _walk(child, caller_v)
+        else:
+            for child in node.children:
+                _walk(child, caller_v)
+
+    _walk(tree_root, None)
 
 
 def _handle_class(

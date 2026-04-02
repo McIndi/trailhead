@@ -24,8 +24,10 @@ from cindex.services.indexing.graph import PropertyGraph, Vertex
 from cindex.services.indexing.adapters.base import (
     LanguageAdapter,
     _add_external,
+    _collect_calls_ts,
     _complexity,
     _node_text,
+    _preceding_doc_comment,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,8 @@ _METHOD_LIKE_TYPES = frozenset({
     "method_declaration",
     "constructor_declaration",
 })
+
+_FUNC_NODE_TYPES = _METHOD_LIKE_TYPES
 
 
 class JavaAdapter(LanguageAdapter):
@@ -80,6 +84,12 @@ class JavaAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, None, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=_FUNC_NODE_TYPES,
+            call_node_types=frozenset({"method_invocation"}),
+            get_callee_name=_java_callee_name,
+        )
         return module_v
 
 
@@ -140,16 +150,24 @@ def _handle_method(node, graph: PropertyGraph, module_v: Vertex, owner: Vertex, 
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return None
-    func_v = graph.add_vertex(
-        "function",
-        name=_node_text(name_node, src),
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-        source=_node_text(node, src),
-        complexity=_complexity(node, _BRANCHING),
-    )
+    props: dict = {
+        "name": _node_text(name_node, src),
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+        "source": _node_text(node, src),
+        "complexity": _complexity(node, _BRANCHING),
+    }
+    doc = _preceding_doc_comment(node, src, prefixes=("/**",))
+    if doc:
+        props["docstring"] = doc
+    func_v = graph.add_vertex("function", **props)
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
     return func_v
+
+
+def _java_callee_name(call_node, src: bytes) -> str | None:
+    name_node = call_node.child_by_field_name("name")
+    return _node_text(name_node, src) if name_node else None
 
 
 def _handle_import(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

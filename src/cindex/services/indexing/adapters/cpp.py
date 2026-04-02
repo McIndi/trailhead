@@ -24,10 +24,11 @@ from cindex.services.indexing.graph import PropertyGraph, Vertex
 from cindex.services.indexing.adapters.base import (
     LanguageAdapter,
     _add_external,
+    _collect_calls_ts,
     _complexity,
     _node_text,
 )
-from cindex.services.indexing.adapters.c import _extract_decl_name
+from cindex.services.indexing.adapters.c import _c_callee_name, _extract_decl_name
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,12 @@ class CppAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, None, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=frozenset({"function_definition"}),
+            call_node_types=frozenset({"call_expression"}),
+            get_callee_name=_c_callee_name,
+        )
         return module_v
 
 

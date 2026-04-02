@@ -67,6 +67,6 @@ where = ["src"]
 version = { attr = "cindex.__version__" }
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["src/tests"]
 log_cli = true
 log_cli_level = "INFO"

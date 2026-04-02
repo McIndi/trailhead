@@ -31,6 +31,7 @@ from cindex.services.indexing.graph import PropertyGraph, Vertex
 from cindex.services.indexing.adapters.base import (
     LanguageAdapter,
     _add_external,
+    _collect_calls_ts,
     _complexity,
     _node_text,
 )
@@ -73,6 +74,12 @@ class CAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=frozenset({"function_definition"}),
+            call_node_types=frozenset({"call_expression"}),
+            get_callee_name=_c_callee_name,
+        )
         return module_v
 
 
@@ -145,6 +152,18 @@ def _handle_include(node, graph: PropertyGraph, module_v: Vertex, src: bytes) ->
     name = _node_text(path_node, src).strip("<>\"' \t")
     if name:
         _add_external(name, module_v, graph)
+
+
+def _c_callee_name(call_node, src: bytes) -> str | None:
+    func_node = call_node.child_by_field_name("function")
+    if func_node is None:
+        return None
+    if func_node.type == "identifier":
+        return _node_text(func_node, src)
+    if func_node.type == "field_expression":
+        field = func_node.child_by_field_name("field")
+        return _node_text(field, src) if field else None
+    return None
 
 
 def _extract_decl_name(node, src: bytes) -> str | None:

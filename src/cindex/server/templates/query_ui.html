@@ -79,6 +79,25 @@
     background: #0f172a; color: #e2e8f0;
     font-size: .76rem; font-family: ui-monospace, monospace;
   }
+  /* Overview tab */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; margin-bottom: 1.25rem; }
+  .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: .6rem; padding: .9rem 1rem; text-align: center; }
+  .stat-card .stat-value { font-size: 1.9rem; font-weight: 700; color: #7dd3fc; line-height: 1.1; }
+  .stat-card .stat-label { font-size: .75rem; color: #64748b; margin-top: .25rem; }
+  .stat-card.warn .stat-value { color: #f59e0b; }
+  .stat-card.ok .stat-value { color: #34d399; }
+  .overview-section { margin-bottom: 1.25rem; }
+  .overview-section h2 { font-size: .88rem; color: #94a3b8; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin-bottom: .6rem; }
+  .ov-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .ov-table th { background: #0f1117; color: #7dd3fc; text-align: left; padding: .4rem .65rem; border-bottom: 1px solid #334155; white-space: nowrap; }
+  .ov-table td { padding: .35rem .65rem; border-bottom: 1px solid #1e293b; color: #cbd5e1; }
+  .ov-table tr:hover td { background: #172033; }
+  .complexity-bar { display: inline-block; height: 8px; background: #0ea5e9; border-radius: 3px; vertical-align: middle; margin-left: .4rem; }
+  .complexity-bar.high { background: #f59e0b; }
+  .complexity-bar.crit { background: #ef4444; }
+  .ov-loading { color: #475569; font-size: .85rem; padding: .5rem 0; }
+  .ov-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  @media (max-width: 700px) { .ov-two-col { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -86,13 +105,47 @@
 <p class="meta">Configured SQLite database: <code>{{SQLITE_DB}}</code></p>
 <p class="meta">Configured embedding model: <code>{{DEFAULT_MODEL}}</code></p>
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('sql', this)">SQL Query</button>
+  <button class="tab-btn active" onclick="switchTab('overview', this)">Overview</button>
+  <button class="tab-btn" onclick="switchTab('sql', this)">SQL Query</button>
   <button class="tab-btn" onclick="switchTab('sim', this)">Semantic Search</button>
   <button class="tab-btn" onclick="switchTab('starter', this)">Starter Queries</button>
   <button class="tab-btn" onclick="switchTab('viz', this)">Visualize</button>
 </div>
 
-<div id="panel-sql" class="panel active">
+<div id="panel-overview" class="panel active">
+  <div class="card">
+    <div class="overview-section">
+      <div class="stat-grid" id="ov-summary">
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Files</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Functions</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Classes</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Edges</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Avg Complexity</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Max Complexity</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">High Complexity (&gt;10)</div></div>
+        <div class="stat-card"><div class="stat-value ov-loading">…</div><div class="stat-label">Missing Docstrings</div></div>
+      </div>
+    </div>
+
+    <div class="ov-two-col">
+      <div class="overview-section">
+        <h2>Most Complex Functions</h2>
+        <div id="ov-complexity"><p class="ov-loading">Loading…</p></div>
+      </div>
+      <div class="overview-section">
+        <h2>Files by Function Count</h2>
+        <div id="ov-files"><p class="ov-loading">Loading…</p></div>
+      </div>
+    </div>
+
+    <div class="overview-section">
+      <h2>Edge Breakdown</h2>
+      <div id="ov-edges"><p class="ov-loading">Loading…</p></div>
+    </div>
+  </div>
+</div>
+
+<div id="panel-sql" class="panel">
   <div class="card">
     <label for="sql-query">SQL</label>
     <textarea id="sql-query" rows="4" placeholder="SELECT * FROM vertices LIMIT 20"></textarea>
@@ -219,6 +272,135 @@ function switchTab(name, el) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
   el.classList.add('active');
+}
+
+// ── Overview tab ─────────────────────────────────────────────────────────────
+
+async function _sql(query) {
+  const res = await fetch('/api/query/sql', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: query}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail ?? JSON.stringify(data));
+  return data.rows;
+}
+
+function _setStatCard(gridEl, index, value, extraClass) {
+  const card = gridEl.children[index];
+  const v = card.querySelector('.stat-value');
+  v.textContent = value;
+  v.classList.remove('ov-loading');
+  if (extraClass) card.classList.add(extraClass);
+}
+
+function _complexityBar(c, max) {
+  const pct = Math.max(4, Math.round((c / Math.max(max, 1)) * 120));
+  const cls = c > 15 ? 'crit' : c > 10 ? 'high' : '';
+  return `<span class="complexity-bar ${cls}" style="width:${pct}px"></span>`;
+}
+
+function _ovTable(cols, rows, renderRow) {
+  const head = cols.map(c => `<th>${esc(c)}</th>`).join('');
+  const body = rows.map(renderRow).join('');
+  return `<div style="overflow-x:auto"><table class="ov-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+async function loadOverview() {
+  const grid = document.getElementById('ov-summary');
+
+  const [
+    labelCounts,
+    edgeCounts,
+    complexityStats,
+    highComplexity,
+    missingDocstrings,
+    topComplex,
+    filesByFunctions,
+  ] = await Promise.all([
+    _sql("SELECT label, COUNT(*) as count FROM vertices GROUP BY label"),
+    _sql("SELECT label, COUNT(*) as count FROM edges GROUP BY label ORDER BY count DESC"),
+    _sql(`SELECT
+            ROUND(AVG(CAST(json_extract(properties_json,'$.complexity') AS REAL)), 1) as avg_c,
+            MAX(CAST(json_extract(properties_json,'$.complexity') AS INTEGER)) as max_c
+          FROM vertices WHERE label='function'
+            AND json_extract(properties_json,'$.complexity') IS NOT NULL`),
+    _sql(`SELECT COUNT(*) as count FROM vertices
+          WHERE label='function'
+            AND CAST(json_extract(properties_json,'$.complexity') AS INTEGER) > 10`),
+    _sql(`SELECT COUNT(*) as count FROM vertices
+          WHERE label IN ('function','module')
+            AND (json_extract(properties_json,'$.docstring') IS NULL
+              OR json_extract(properties_json,'$.docstring') = '')`),
+    _sql(`SELECT
+            json_extract(properties_json,'$.name') as name,
+            json_extract(properties_json,'$.path') as path,
+            json_extract(properties_json,'$.line') as line,
+            CAST(json_extract(properties_json,'$.complexity') AS INTEGER) as complexity
+          FROM vertices WHERE label='function'
+            AND json_extract(properties_json,'$.complexity') IS NOT NULL
+          ORDER BY complexity DESC LIMIT 10`),
+    _sql(`SELECT
+            json_extract(properties_json,'$.path') as path,
+            COUNT(*) as functions
+          FROM vertices WHERE label='function'
+          GROUP BY path ORDER BY functions DESC LIMIT 10`),
+  ]);
+
+  // Summary cards
+  const byLabel = Object.fromEntries(labelCounts.map(r => [r.label, r.count]));
+  const totalEdges = edgeCounts.reduce((s, r) => s + r.count, 0);
+  const cs = complexityStats[0] || {};
+  const highC = highComplexity[0]?.count ?? 0;
+  const missingD = missingDocstrings[0]?.count ?? 0;
+
+  _setStatCard(grid, 0, byLabel.module ?? 0);
+  _setStatCard(grid, 1, byLabel.function ?? 0);
+  _setStatCard(grid, 2, byLabel.class ?? 0);
+  _setStatCard(grid, 3, totalEdges);
+  _setStatCard(grid, 4, cs.avg_c ?? '—');
+  _setStatCard(grid, 5, cs.max_c ?? '—', cs.max_c > 15 ? 'warn' : 'ok');
+  _setStatCard(grid, 6, highC, highC > 0 ? 'warn' : 'ok');
+  _setStatCard(grid, 7, missingD, missingD > 10 ? 'warn' : 'ok');
+
+  // Top complex functions table
+  const maxC = topComplex[0]?.complexity ?? 1;
+  document.getElementById('ov-complexity').innerHTML = _ovTable(
+    ['Name', 'Complexity', 'File', 'Line'],
+    topComplex,
+    r => {
+      const fileParts = String(r.path || '').split(/[/\\]/);
+      const shortFile = fileParts.slice(-2).join('/');
+      return `<tr>
+        <td>${esc(r.name)}</td>
+        <td>${esc(r.complexity)}${_complexityBar(r.complexity, maxC)}</td>
+        <td title="${esc(r.path)}">${esc(shortFile)}</td>
+        <td>${esc(r.line)}</td>
+      </tr>`;
+    }
+  );
+
+  // Files by function count
+  document.getElementById('ov-files').innerHTML = _ovTable(
+    ['File', 'Functions'],
+    filesByFunctions,
+    r => {
+      const fileParts = String(r.path || '').split(/[/\\]/);
+      const shortFile = fileParts.slice(-2).join('/');
+      return `<tr>
+        <td title="${esc(r.path)}">${esc(shortFile)}</td>
+        <td>${esc(r.functions)}</td>
+      </tr>`;
+    }
+  );
+
+  // Edge breakdown
+  document.getElementById('ov-edges').innerHTML = _ovTable(
+    ['Edge Label', 'Count'],
+    edgeCounts,
+    r => `<tr><td>${esc(r.label)}</td><td>${esc(r.count)}</td></tr>`
+  );
 }
 
 function showError(id, msg) {
@@ -721,6 +903,7 @@ async function runSim() {
 }
 
 loadStarterTemplates();
+loadOverview();
 </script>
 </body>
 </html>

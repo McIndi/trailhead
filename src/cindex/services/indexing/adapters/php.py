@@ -25,8 +25,10 @@ from cindex.services.indexing.graph import PropertyGraph, Vertex
 from cindex.services.indexing.adapters.base import (
     LanguageAdapter,
     _add_external,
+    _collect_calls_ts,
     _complexity,
     _node_text,
+    _preceding_doc_comment,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,13 @@ _CLASS_LIKE_TYPES = frozenset({
 _REQUIRE_TYPES = frozenset({
     "require_expression", "require_once_expression",
     "include_expression", "include_once_expression",
+})
+
+_FUNC_NODE_TYPES = frozenset({"function_definition", "method_declaration"})
+_CALL_NODE_TYPES = frozenset({
+    "function_call_expression",
+    "method_call_expression",
+    "static_method_call_expression",
 })
 
 
@@ -83,6 +92,12 @@ class PHPAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, None, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=_FUNC_NODE_TYPES,
+            call_node_types=_CALL_NODE_TYPES,
+            get_callee_name=_php_callee_name,
+        )
         return module_v
 
 
@@ -158,16 +173,31 @@ def _handle_function(node, graph: PropertyGraph, module_v: Vertex, owner: Vertex
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return None
-    func_v = graph.add_vertex(
-        "function",
-        name=_node_text(name_node, src),
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-        source=_node_text(node, src),
-        complexity=_complexity(node, _BRANCHING),
-    )
+    props: dict = {
+        "name": _node_text(name_node, src),
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+        "source": _node_text(node, src),
+        "complexity": _complexity(node, _BRANCHING),
+    }
+    doc = _preceding_doc_comment(node, src, prefixes=("/**",))
+    if doc:
+        props["docstring"] = doc
+    func_v = graph.add_vertex("function", **props)
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
     return func_v
+
+
+def _php_callee_name(call_node, src: bytes) -> str | None:
+    t = call_node.type
+    if t == "function_call_expression":
+        func_node = call_node.child_by_field_name("function")
+        if func_node is not None and func_node.type in ("name", "qualified_name"):
+            return _node_text(func_node, src).split("\\")[-1]
+    elif t in ("method_call_expression", "static_method_call_expression"):
+        name_node = call_node.child_by_field_name("name")
+        return _node_text(name_node, src) if name_node else None
+    return None
 
 
 def _handle_use(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:

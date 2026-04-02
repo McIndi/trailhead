@@ -28,8 +28,10 @@ from cindex.services.indexing.graph import PropertyGraph, Vertex
 from cindex.services.indexing.adapters.base import (
     LanguageAdapter,
     _add_external,
+    _collect_calls_ts,
     _complexity,
     _node_text,
+    _preceding_doc_comment,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,8 @@ _BRANCHING = frozenset({
     "if_statement", "else_clause", "for_statement", "switch_statement",
     "case_clause", "select_statement", "comm_clause", "type_switch_statement",
 })
+
+_FUNC_NODE_TYPES = frozenset({"function_declaration", "method_declaration", "func_literal"})
 
 
 class GoAdapter(LanguageAdapter):
@@ -70,6 +74,12 @@ class GoAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=_FUNC_NODE_TYPES,
+            call_node_types=frozenset({"call_expression"}),
+            get_callee_name=_go_callee_name,
+        )
         return module_v
 
 
@@ -99,14 +109,17 @@ def _handle_func(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> Ve
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return None
-    func_v = graph.add_vertex(
-        "function",
-        name=_node_text(name_node, src),
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-        source=_node_text(node, src),
-        complexity=_complexity(node, _BRANCHING),
-    )
+    props: dict = {
+        "name": _node_text(name_node, src),
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+        "source": _node_text(node, src),
+        "complexity": _complexity(node, _BRANCHING),
+    }
+    doc = _preceding_doc_comment(node, src, prefixes=("//",))
+    if doc:
+        props["docstring"] = doc
+    func_v = graph.add_vertex("function", **props)
     graph.add_edge("defines", module_v, func_v)
     body = node.child_by_field_name("body")
     if body is not None:
@@ -126,14 +139,17 @@ def _handle_method(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> 
     else:
         owner = module_v
 
-    func_v = graph.add_vertex(
-        "function",
-        name=_node_text(name_node, src),
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-        source=_node_text(node, src),
-        complexity=_complexity(node, _BRANCHING),
-    )
+    props: dict = {
+        "name": _node_text(name_node, src),
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+        "source": _node_text(node, src),
+        "complexity": _complexity(node, _BRANCHING),
+    }
+    doc = _preceding_doc_comment(node, src, prefixes=("//",))
+    if doc:
+        props["docstring"] = doc
+    func_v = graph.add_vertex("function", **props)
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
     body = node.child_by_field_name("body")
     if body is not None:
@@ -190,6 +206,18 @@ def _receiver_type_name(method_node, src: bytes) -> str | None:
         if n.type == "type_identifier":
             return _node_text(n, src)
         stack.extend(n.children)
+    return None
+
+
+def _go_callee_name(call_node, src: bytes) -> str | None:
+    func_node = call_node.child_by_field_name("function")
+    if func_node is None:
+        return None
+    if func_node.type == "identifier":
+        return _node_text(func_node, src)
+    if func_node.type == "selector_expression":
+        field = func_node.child_by_field_name("field")
+        return _node_text(field, src) if field else None
     return None
 
 

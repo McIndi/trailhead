@@ -25,8 +25,10 @@ from cindex.services.indexing.graph import PropertyGraph, Vertex
 from cindex.services.indexing.adapters.base import (
     LanguageAdapter,
     _add_external,
+    _collect_calls_ts,
     _complexity,
     _node_text,
+    _preceding_doc_comment,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,12 @@ _METHOD_LIKE_TYPES = frozenset({
     "method_definition",
     "method_signature",
     "abstract_method_signature",
+})
+
+_FUNC_NODE_TYPES = frozenset({
+    "function_declaration", "generator_function_declaration",
+    "arrow_function", "function_expression", "generator_function",
+    "method_definition", "method_signature", "abstract_method_signature",
 })
 
 
@@ -93,6 +101,12 @@ class TypeScriptAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, None, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=_FUNC_NODE_TYPES,
+            call_node_types=frozenset({"call_expression"}),
+            get_callee_name=_ts_callee_name,
+        )
         return module_v
 
 
@@ -126,6 +140,12 @@ class TSXAdapter(LanguageAdapter):
 
         module_v = graph.add_vertex("module", name=path.stem, path=str(path))
         _visit(tree.root_node, graph, module_v, None, source)
+        _collect_calls_ts(
+            tree.root_node, graph, module_v, source,
+            func_node_types=_FUNC_NODE_TYPES,
+            call_node_types=frozenset({"call_expression"}),
+            get_callee_name=_ts_callee_name,
+        )
         return module_v
 
 
@@ -227,16 +247,31 @@ def _handle_method(node, graph: PropertyGraph, module_v: Vertex, class_v: Vertex
 
 
 def _add_function(node, name: str, owner: Vertex, module_v: Vertex, graph: PropertyGraph, src: bytes) -> Vertex:
-    func_v = graph.add_vertex(
-        "function",
-        name=name,
-        path=module_v.properties["path"],
-        line=node.start_point[0] + 1,
-        source=_node_text(node, src),
-        complexity=_complexity(node, _BRANCHING),
-    )
+    props: dict = {
+        "name": name,
+        "path": module_v.properties["path"],
+        "line": node.start_point[0] + 1,
+        "source": _node_text(node, src),
+        "complexity": _complexity(node, _BRANCHING),
+    }
+    doc = _preceding_doc_comment(node, src, prefixes=("/**",))
+    if doc:
+        props["docstring"] = doc
+    func_v = graph.add_vertex("function", **props)
     graph.add_edge("has_method" if owner.label == "class" else "defines", owner, func_v)
     return func_v
+
+
+def _ts_callee_name(call_node, src: bytes) -> str | None:
+    func_node = call_node.child_by_field_name("function")
+    if func_node is None:
+        return None
+    if func_node.type == "identifier":
+        return _node_text(func_node, src)
+    if func_node.type in ("member_expression", "subscript_expression"):
+        prop = func_node.child_by_field_name("property")
+        return _node_text(prop, src) if prop else None
+    return None
 
 
 def _handle_import(node, graph: PropertyGraph, module_v: Vertex, src: bytes) -> None:
