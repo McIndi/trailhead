@@ -1,5 +1,8 @@
 """Code indexing service — property graph construction from source trees."""
 
+from trailhead.services.indexing.discovery import discover_source_files
+from trailhead.services.indexing.discovery import load_ignore_spec
+from trailhead.services.indexing.discovery import should_index_path
 from trailhead.services.indexing.graph import PropertyGraph
 from trailhead.services.indexing.graph_query import search_vertices
 from trailhead.services.indexing.graph_query import traverse_graph
@@ -18,11 +21,14 @@ from trailhead.services.indexing.walker import index_directory
 __all__ = [
     "PropertyGraph",
     "LiveIndexer",
+    "discover_source_files",
     "index_directory",
+    "load_ignore_spec",
     "persist_graph",
     "persist_indexed_files",
     "persist_vertex_embeddings",
     "reindex_file",
+    "should_index_path",
     "vector_to_blob",
     "get_indexed_files",
     "load_graph",

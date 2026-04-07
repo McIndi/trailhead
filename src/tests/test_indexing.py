@@ -1,6 +1,7 @@
 """Tests for the indexing service (property graph model + tree-sitter parser)."""
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -390,6 +391,33 @@ class TestIndexDirectory:
         graph = index_directory(tmp_path)
         assert len(graph.vertices("module")) == 1
 
+    def test_respects_ignore_files_with_trailheadignore_precedence(self, tmp_path):
+        from trailhead.services.indexing.walker import index_directory
+
+        (tmp_path / ".gitignore").write_text("*.py\n")
+        (tmp_path / ".trailheadignore").write_text("!keep.py\n")
+        (tmp_path / "keep.py").write_text("def keep():\n    pass\n")
+        (tmp_path / "drop.py").write_text("def drop():\n    pass\n")
+
+        graph = index_directory(tmp_path)
+
+        module_names = {v.properties["name"] for v in graph.vertices("module")}
+        assert module_names == {"keep"}
+
+    def test_ignores_directories_listed_in_ignore_files(self, tmp_path):
+        from trailhead.services.indexing.walker import index_directory
+
+        generated = tmp_path / "generated"
+        generated.mkdir()
+        (tmp_path / ".gitignore").write_text("generated/\n")
+        (tmp_path / "keep.py").write_text("def keep():\n    pass\n")
+        (generated / "skip.py").write_text("def skip():\n    pass\n")
+
+        graph = index_directory(tmp_path)
+
+        module_names = {v.properties["name"] for v in graph.vertices("module")}
+        assert module_names == {"keep"}
+
     def test_accepts_existing_graph(self, tmp_path):
         from trailhead.services.indexing.graph import PropertyGraph
         from trailhead.services.indexing.walker import index_directory
@@ -517,6 +545,23 @@ class TestSqliteStore:
         assert v_count == 4
         assert e_count == 2
 
+    def test_persist_indexed_files_respects_ignore_files(self, tmp_path):
+        from trailhead.services.indexing.sqlite_store import get_indexed_files
+        from trailhead.services.indexing.sqlite_store import persist_indexed_files
+
+        root = tmp_path / "src"
+        root.mkdir()
+        (root / ".gitignore").write_text("skip.py\n")
+        (root / "keep.py").write_text("def keep():\n    pass\n")
+        (root / "skip.py").write_text("def skip():\n    pass\n")
+        db = tmp_path / "graph.db"
+
+        count = persist_indexed_files(root, db)
+        indexed_files = get_indexed_files(db)
+
+        assert count == 1
+        assert set(indexed_files) == {str((root / "keep.py").resolve())}
+
     def test_persist_vertex_embeddings_writes_rows(self, tmp_path, monkeypatch):
         from trailhead.services.indexing.graph import PropertyGraph
         from trailhead.services.indexing.sqlite_store import persist_graph
@@ -629,3 +674,63 @@ class TestIndexCommandSqlite:
             ]
         )
         assert rc == 0
+
+
+class TestIndexCommandDryRun:
+    def test_dry_run_lists_candidates_without_creating_db(self, tmp_path, capsys):
+        from trailhead.cli import app as cli
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / ".gitignore").write_text("*.py\n")
+        (src / ".trailheadignore").write_text("!keep.py\n")
+        (src / "keep.py").write_text("def keep():\n    pass\n")
+        (src / "drop.py").write_text("def drop():\n    pass\n")
+
+        rc = cli.main(["index", str(src), "--dry-run"])
+        output = capsys.readouterr().out
+
+        assert rc == 0
+        assert "Would index 1 file(s)" in output
+        assert "keep.py" in output
+        assert "drop.py" not in output
+        assert not (src / ".trailhead").exists()
+
+    def test_dry_run_json_uses_preview_schema(self, tmp_path, capsys):
+        from trailhead.cli import app as cli
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "keep.py").write_text("def keep():\n    pass\n")
+
+        rc = cli.main(["index", str(src), "--dry-run", "--output", "json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert rc == 0
+        assert payload == {
+            "root": str(src.resolve()),
+            "count": 1,
+            "files": ["keep.py"],
+        }
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["index", "src", "--dry-run", "--watch"],
+            ["index", "src", "--dry-run", "--in-memory"],
+            ["index", "src", "--dry-run", "--sqlite-db", "graph.db"],
+            ["index", "src", "--dry-run", "--embed-model", "sentence-transformers/all-MiniLM-L6-v2"],
+        ],
+    )
+    def test_dry_run_rejects_incompatible_flags(self, tmp_path, argv):
+        from trailhead.cli import app as cli
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "keep.py").write_text("def keep():\n    pass\n")
+
+        normalized_argv = [str(src) if arg == "src" else arg for arg in argv]
+
+        rc = cli.main(normalized_argv)
+
+        assert rc == 1

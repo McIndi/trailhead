@@ -116,6 +116,34 @@ class TestLiveIndexerThreading:
         assert len(reindexed) == 1
         assert any(p.name == "foo.py" for p in reindexed[0])
 
+    def test_watcher_ignores_ignore_file_updates(self, tmp_path, monkeypatch):
+        from trailhead.services.indexing.live_indexer import LiveIndexer
+
+        root = tmp_path / "src"
+        root.mkdir()
+        db = tmp_path / "graph.db"
+
+        reindexed: list[set] = []
+
+        def fake_reindex_paths(paths):
+            reindexed.append(paths)
+
+        fake_changes = [[(1, str(root / ".trailheadignore")), (1, str(root / ".gitignore"))]]
+
+        monkeypatch.setattr(
+            "trailhead.services.indexing.live_indexer.watch",
+            lambda *a, **kw: iter(fake_changes),
+        )
+
+        service = LiveIndexer(root=root, db_path=db)
+        monkeypatch.setattr(service, "reindex_paths", fake_reindex_paths)
+        service.start()
+        if service._watch_thread is not None:
+            service._watch_thread.join(timeout=5)
+        service.stop()
+
+        assert reindexed == []
+
 
 class TestLiveIndexer:
     def test_synchronize_reindexes_changed_new_and_deleted_files(self, tmp_path, monkeypatch):
@@ -158,3 +186,28 @@ class TestLiveIndexer:
             new_file.resolve(),
             deleted_file.resolve(),
         }
+
+    def test_reindex_paths_skips_ignored_files_using_current_rules(self, tmp_path, monkeypatch):
+        from trailhead.services.indexing.live_indexer import LiveIndexer
+
+        root = tmp_path / "src"
+        root.mkdir()
+        keep = root / "keep.py"
+        ignored = root / "ignored.py"
+        keep.write_text("def keep():\n    pass\n")
+        ignored.write_text("def ignored():\n    pass\n")
+        (root / ".gitignore").write_text("*.py\n")
+        (root / ".trailheadignore").write_text("!keep.py\n")
+
+        seen_paths: list[Path] = []
+
+        def fake_reindex_file(db_path, path, **kwargs):
+            seen_paths.append(path.resolve())
+            return (0, 0)
+
+        monkeypatch.setattr("trailhead.services.indexing.live_indexer.reindex_file", fake_reindex_file)
+
+        service = LiveIndexer(root=root, db_path=tmp_path / "graph.db")
+        service.reindex_paths({keep, ignored})
+
+        assert seen_paths == [keep.resolve()]

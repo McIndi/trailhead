@@ -132,6 +132,13 @@ th index . --in-memory
 th index . --in-memory --output json
 ```
 
+Preview which files would be indexed without parsing or writing any SQLite state:
+
+```powershell
+th index . --dry-run
+th index . --dry-run --output json
+```
+
 Watch for file changes and reindex incrementally (Ctrl-C to stop):
 
 ```powershell
@@ -148,6 +155,18 @@ th index . --sqlite-db ./.trailhead/graph.db --embed-model sentence-transformers
 ```
 
 When `sqlite-vector` can be loaded, trailhead also initializes vector search for the `vertex_embeddings.embedding` column. If extension loading is unavailable on your platform build, embeddings are still stored as Float32 BLOBs in SQLite.
+
+Source discovery respects `.gitignore` and `.trailheadignore` in the indexed directory. Both use gitignore-style patterns, and `.trailheadignore` is applied after `.gitignore` so Trailhead-specific rules take precedence. If you change either ignore file, delete `.trailhead/db.sqlite` and run `th index` again to rebuild the index with the new rules.
+
+`th index --dry-run --output json` returns a file-preview payload with this schema:
+
+```json
+{
+  "root": "C:/path/to/project",
+  "count": 2,
+  "files": ["src/app.py", "src/lib/util.py"]
+}
+```
 
 ### serve
 

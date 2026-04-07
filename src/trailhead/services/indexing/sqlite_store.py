@@ -13,6 +13,7 @@ from pathlib import Path
 
 from trailhead.services.embeddings import generate_embeddings
 from trailhead.services.indexing.adapters import parse_file, supported_suffixes
+from trailhead.services.indexing.discovery import discover_source_files
 from trailhead.services.indexing.graph import PropertyGraph
 from trailhead.services.indexing.graph import Vertex
 
@@ -276,11 +277,7 @@ def load_graph(db_path: Path) -> PropertyGraph:
 
 def persist_indexed_files(root: Path, db_path: Path, *, append: bool = False) -> int:
     """Persist a snapshot of indexed source file mtimes for *root*."""
-    files = sorted(
-        path.resolve()
-        for path in root.rglob("*")
-        if path.is_file() and path.suffix in supported_suffixes()
-    )
+    files = discover_source_files(root)
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:

@@ -5,7 +5,8 @@ import logging
 from pathlib import Path
 
 from trailhead.services.indexing.graph import PropertyGraph
-from trailhead.services.indexing.adapters import parse_file, supported_suffixes
+from trailhead.services.indexing.adapters import parse_file
+from trailhead.services.indexing.discovery import discover_source_files
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,7 @@ def index_directory(root: Path, graph: PropertyGraph | None = None) -> PropertyG
     if graph is None:
         graph = PropertyGraph()
 
-    suffixes = supported_suffixes()
-    files = sorted(
-        p for p in root.rglob("*") if p.is_file() and p.suffix in suffixes
-    )
+    files = discover_source_files(root)
     logger.info("Found %d file(s) to index under %s", len(files), root)
 
     failed: list[Path] = []

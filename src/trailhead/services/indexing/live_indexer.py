@@ -12,6 +12,9 @@ from watchfiles import Change
 from watchfiles import watch
 
 from trailhead.services.indexing.adapters import supported_suffixes
+from trailhead.services.indexing.discovery import discover_source_files
+from trailhead.services.indexing.discovery import load_ignore_spec
+from trailhead.services.indexing.discovery import should_index_path
 from trailhead.services.indexing.sqlite_store import get_indexed_files
 from trailhead.services.indexing.sqlite_store import persist_graph
 from trailhead.services.indexing.sqlite_store import persist_indexed_files
@@ -87,9 +90,8 @@ class LiveIndexer:
 
     def synchronize(self) -> None:
         current_files = {
-            str(path.resolve()): path.stat().st_mtime_ns
-            for path in self.root.rglob("*")
-            if path.is_file() and path.suffix in supported_suffixes()
+            str(path): path.stat().st_mtime_ns
+            for path in discover_source_files(self.root)
         }
         indexed_files = get_indexed_files(self.db_path)
         logger.info(
@@ -141,7 +143,13 @@ class LiveIndexer:
         logger.info("Full index build complete")
 
     def reindex_paths(self, paths: set[Path]) -> None:
-        py_paths = sorted(p.resolve() for p in paths if p.suffix in supported_suffixes())
+        ignore_spec = load_ignore_spec(self.root)
+        suffixes = supported_suffixes()
+        py_paths = sorted(
+            path.resolve()
+            for path in paths
+            if should_index_path(path, self.root, spec=ignore_spec, suffixes=suffixes)
+        )
         if not py_paths:
             return
         for path in py_paths:

@@ -10,6 +10,7 @@ from pathlib import Path
 from trailhead.services.config import ALLOWED_MODELS
 from trailhead.services.config import get_cache_dir
 from trailhead.services.config import is_model_allowed
+from trailhead.services.indexing import discover_source_files
 from trailhead.services.indexing import LiveIndexer
 from trailhead.services.indexing.graph import PropertyGraph
 from trailhead.services.indexing.sqlite_store import get_index_model
@@ -57,6 +58,15 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         ),
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "List the source files that would be indexed and exit without parsing "
+            "or writing SQLite state. Incompatible with --watch, --in-memory, "
+            "--sqlite-db, and --embed-model."
+        ),
+    )
+    parser.add_argument(
         "--watch",
         action="store_true",
         help=(
@@ -69,7 +79,7 @@ def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         "--output",
         choices=["summary", "json"],
         default="summary",
-        help="Output format when --in-memory is set (default: summary).",
+        help="Output format when --in-memory or --dry-run is set (default: summary).",
     )
     parser.add_argument(
         "--embed-model",
@@ -113,8 +123,24 @@ def run(args: argparse.Namespace) -> int:
         logger.error("--in-memory and --watch are mutually exclusive.")
         return 1
 
+    if args.dry_run and args.watch:
+        logger.error("--dry-run and --watch are mutually exclusive.")
+        return 1
+
+    if args.dry_run and args.in_memory:
+        logger.error("--dry-run and --in-memory are mutually exclusive.")
+        return 1
+
+    if args.dry_run and args.sqlite_db:
+        logger.error("--dry-run does not accept --sqlite-db.")
+        return 1
+
     if args.embed_model and args.in_memory:
         logger.error("--embed-model requires SQLite persistence; remove --in-memory.")
+        return 1
+
+    if args.embed_model and args.dry_run:
+        logger.error("--embed-model requires SQLite persistence; remove --dry-run.")
         return 1
 
     if args.embed_model and not args.sqlite_db:
@@ -129,6 +155,18 @@ def run(args: argparse.Namespace) -> int:
             ", ".join(sorted(ALLOWED_MODELS)),
         )
         return 1
+
+    # ------------------------------------------------------------------
+    # Dry-run path: enumerate files only, print preview, then exit.
+    # ------------------------------------------------------------------
+    if args.dry_run:
+        logger.info("Previewing index candidates under %s", root)
+        files = discover_source_files(root)
+        if args.output == "json":
+            _print_dry_run_json(root, files)
+        else:
+            _print_dry_run_summary(root, files)
+        return 0
 
     # ------------------------------------------------------------------
     # In-memory path: one-shot build, print summary/JSON, then exit.
@@ -241,3 +279,21 @@ def _print_summary(graph: PropertyGraph) -> None:
         if imports:
             names = sorted(e.in_v.properties["name"] for e in imports)
             print(f"    imports: {', '.join(names)}")
+
+
+def _print_dry_run_json(root: Path, files: list[Path]) -> None:
+    data = {
+        "root": str(root),
+        "count": len(files),
+        "files": [path.relative_to(root).as_posix() for path in files],
+    }
+    print(json.dumps(data, indent=2))
+
+
+def _print_dry_run_summary(root: Path, files: list[Path]) -> None:
+    print(f"Would index {len(files)} file(s) under {root}.")
+    if not files:
+        return
+    print()
+    for path in files:
+        print(path.relative_to(root).as_posix())
